@@ -37,9 +37,10 @@ type ExportPayload struct {
 
 // Deps — зависимости раннера.
 type Deps struct {
-	GH      *githubclient.Client
-	Store   *artifacts.FSStore
-	Exports *store.ExportsMem
+	GH          *githubclient.Client
+	Store       *artifacts.FSStore
+	Exports     *store.ExportsMem
+	MaxAttempts int
 }
 
 // NewRunner — адаптер под jobs.Runner.
@@ -57,23 +58,40 @@ func NewRunner(d Deps) jobs.Runner {
 
 		d.Exports.UpdateStatus(p.ExportID, jobs.StatusRunning, 5, nil)
 
+		maxAttempts := d.MaxAttempts
+		if maxAttempts <= 0 {
+			maxAttempts = 3
+		}
+		retryOrFail := func(message, reason string, after time.Duration) error {
+			if t.Attempt+1 < maxAttempts {
+				if after <= 0 {
+					after = time.Second
+				}
+				d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr(message))
+				return &jobs.RetryableError{After: after, Reason: reason}
+			}
+			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr(message))
+			return nil
+		}
+
 		// 1) скачиваем tarball
 		rc, err := d.GH.GetTarball(ctx, p.Owner, p.Repo, p.Ref)
 		if err != nil {
 			var rle *githubclient.RateLimitedError
 			switch {
 			case errors.As(err, &rle):
-				d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr("rate limited; retry later"))
-				return &jobs.RetryableError{After: time.Until(time.Unix(rle.Reset, 0)), Reason: "GitHub rate limited"}
+				delay := time.Until(time.Unix(rle.Reset, 0))
+				if delay < time.Second {
+					delay = time.Second
+				}
+				return retryOrFail("rate limited; retry later", "GitHub rate limited", delay)
 			case errors.Is(err, githubclient.ErrUpstream):
-				d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr("upstream error; retry later"))
-				return &jobs.RetryableError{After: 2 * time.Second, Reason: "GitHub 5xx"}
+				return retryOrFail("upstream error; retry later", "GitHub 5xx", 2*time.Second)
 			case errors.Is(err, githubclient.ErrNotFound):
 				d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("repository or ref not found"))
 				return nil
 			default:
-				d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr("network error; retry later"))
-				return &jobs.RetryableError{After: 2 * time.Second, Reason: "network"}
+				return retryOrFail("network error; retry later", "network", 2*time.Second)
 			}
 		}
 		defer rc.Close()
@@ -123,8 +141,7 @@ func NewRunner(d Deps) jobs.Runner {
 					d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("too_large"))
 					return nil
 				}
-				d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr("build zip failed; retry"))
-				return &jobs.RetryableError{After: 2 * time.Second, Reason: "build-zip"}
+				return retryOrFail("build zip failed; retry", "build-zip", 2*time.Second)
 			}
 
 		case "txt":
@@ -143,8 +160,7 @@ func NewRunner(d Deps) jobs.Runner {
 					d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("too_large"))
 					return nil
 				}
-				d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr("build txt failed; retry"))
-				return &jobs.RetryableError{After: 2 * time.Second, Reason: "build-txt"}
+				return retryOrFail("build txt failed; retry", "build-txt", 2*time.Second)
 			}
 
 		case "md":
@@ -163,17 +179,14 @@ func NewRunner(d Deps) jobs.Runner {
 				if nsp, ok := err.(*exporter.NeedSecondPassError); ok {
 					rc2, e2 := d.GH.GetTarball(ctx, p.Owner, p.Repo, p.Ref)
 					if e2 != nil {
-						d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr("need second pass; tarball retry"))
-						return &jobs.RetryableError{After: 2 * time.Second, Reason: "tarball-2nd"}
+						return retryOrFail("need second pass; tarball retry", "tarball-2nd", 2*time.Second)
 					}
 					defer rc2.Close()
 					if e := exporter.FillSecondPassExcerpts(rc2, nsp); e != nil {
-						d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr("second pass failed; retry"))
-						return &jobs.RetryableError{After: 2 * time.Second, Reason: "pp-second-pass"}
+						return retryOrFail("second pass failed; retry", "pp-second-pass", 2*time.Second)
 					}
 				} else {
-					d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr("promptpack build failed; retry"))
-					return &jobs.RetryableError{After: 2 * time.Second, Reason: "promptpack"}
+					return retryOrFail("promptpack build failed; retry", "promptpack", 2*time.Second)
 				}
 			}
 		}

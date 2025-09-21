@@ -15,6 +15,7 @@ export type TreeSelectorProps = {
   selectedPaths: string[];
   includeGlobs: string[];
   excludeGlobs: string[];
+  filtersEnabled?: boolean;
   autoExcludedPaths?: string[];
   activePath?: string | null;
   loading?: boolean;
@@ -29,6 +30,7 @@ export function TreeSelector({
   selectedPaths,
   includeGlobs,
   excludeGlobs,
+  filtersEnabled = true,
   autoExcludedPaths,
   activePath,
   loading,
@@ -46,8 +48,9 @@ export function TreeSelector({
         includeGlobs,
         excludeGlobs,
         autoExcludedPaths,
+        filtersEnabled,
       }),
-    [items, selectedPaths, includeGlobs, excludeGlobs, autoExcludedPaths]
+    [items, selectedPaths, includeGlobs, excludeGlobs, autoExcludedPaths, filtersEnabled]
   );
 
   const autoExcludedSet = useMemo(() => new Set(autoExcludedPaths ?? []), [autoExcludedPaths]);

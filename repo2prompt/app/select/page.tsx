@@ -68,9 +68,11 @@ export default function SelectPage() {
   const selectedPaths = useStore((state) => state.selectedPaths);
   const includeGlobs = useStore((state) => state.includeGlobs);
   const excludeGlobs = useStore((state) => state.excludeGlobs);
+  const filtersEnabled = useStore((state) => state.filtersEnabled);
   const autoExcludedPaths = useStore((state) => state.autoExcludedPaths);
   const setSelectedPaths = useStore((state) => state.setSelectedPaths);
   const setMasks = useStore((state) => state.setMasks);
+  const setFiltersEnabled = useStore((state) => state.setFiltersEnabled);
   const clearSelection = useStore((state) => state.clearSelection);
   const [activePath, setActivePath] = useState<string | null>(null);
 
@@ -103,8 +105,9 @@ export default function SelectPage() {
         includeGlobs,
         excludeGlobs,
         autoExcludedPaths,
+        filtersEnabled,
       }),
-    [items, selectedPaths, includeGlobs, excludeGlobs, autoExcludedPaths]
+    [items, selectedPaths, includeGlobs, excludeGlobs, autoExcludedPaths, filtersEnabled]
   );
 
   if (query.isLoading && items.length === 0) {
@@ -156,17 +159,18 @@ export default function SelectPage() {
         </CardBody>
       </Card>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
-        <TreeSelector
-          items={items}
-          selectedPaths={selectedPaths}
-          includeGlobs={includeGlobs}
-          excludeGlobs={excludeGlobs}
-          autoExcludedPaths={autoExcludedPaths}
-          activePath={activePath}
-          loading={query.isLoading && items.length === 0}
-          onChangeSelection={setSelectedPaths}
-          onPreview={setActivePath}
-        />
+          <TreeSelector
+            items={items}
+            selectedPaths={selectedPaths}
+            includeGlobs={includeGlobs}
+            excludeGlobs={excludeGlobs}
+            filtersEnabled={filtersEnabled}
+            autoExcludedPaths={autoExcludedPaths}
+            activePath={activePath}
+            loading={query.isLoading && items.length === 0}
+            onChangeSelection={setSelectedPaths}
+            onPreview={setActivePath}
+          />
         <div className="flex flex-col gap-4">
           <Card shadow="sm" className="border border-default-100 bg-white/80 backdrop-blur dark:bg-content1/60">
             <CardBody className="space-y-4">
@@ -175,10 +179,12 @@ export default function SelectPage() {
                   <MaskEditor
                     includeGlobs={includeGlobs}
                     excludeGlobs={excludeGlobs}
+                    filtersEnabled={filtersEnabled}
                     presets={PRESETS}
                     onChangeInclude={(next) => setMasks(next, excludeGlobs)}
                     onChangeExclude={(next) => setMasks(includeGlobs, next)}
                     onResetExclude={() => setMasks(includeGlobs, DEFAULT_EXCLUDE)}
+                    onToggleFilters={(enabled) => setFiltersEnabled(enabled)}
                   />
                 </Tab>
                 <Tab key="preview" title={t('select.preview.title')}>
@@ -209,6 +215,7 @@ export default function SelectPage() {
                   onPress={() => {
                     clearSelection();
                     setMasks([], DEFAULT_EXCLUDE);
+                    setFiltersEnabled(true);
                   }}
                 >
                   {t('select.cta.clear')}

@@ -44,7 +44,7 @@ func New(cfg config.Config) http.Handler {
 	exportsDB := store.NewExportsMem("exp")
 	queue := jobs.NewQueue(128)
 	runner := worker.NewRunner(worker.Deps{
-		GH: gh, Store: fsStore, Exports: exportsDB,
+		GH: gh, Store: fsStore, Exports: exportsDB, MaxAttempts: 3,
 	})
 	// стартуем воркеров (конкурентность/ретраи можно вынести в cfg/env)
 	go queue.StartWorkers(context.Background(), 4, runner, 3)

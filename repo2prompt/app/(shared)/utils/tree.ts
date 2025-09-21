@@ -149,6 +149,7 @@ export type SelectionOptions = {
   includeGlobs: string[];
   excludeGlobs: string[];
   autoExcludedPaths?: string[];
+  filtersEnabled?: boolean;
 };
 
 export type SelectionStats = {
@@ -161,8 +162,9 @@ export type SelectionStats = {
 
 export function computeSelectionStats(items: TreeItem[], options: SelectionOptions): SelectionStats {
   const files = items.filter((item) => item.type === 'file');
-  const includeMatchers = buildMatchers(options.includeGlobs);
-  const excludeMatchers = buildMatchers(options.excludeGlobs);
+  const filtersEnabled = options.filtersEnabled ?? true;
+  const includeMatchers = filtersEnabled ? buildMatchers(options.includeGlobs) : [];
+  const excludeMatchers = filtersEnabled ? buildMatchers(options.excludeGlobs) : [];
   const selectedSet = new Set(options.selectedPaths);
   const autoExcluded = new Set(options.autoExcludedPaths ?? []);
 
@@ -172,13 +174,17 @@ export function computeSelectionStats(items: TreeItem[], options: SelectionOptio
 
   files.forEach((file) => {
     const manuallySelected = selectedSet.has(file.path);
-    const includedByMask =
-      options.includeGlobs.length === 0 ? true : matchesAny(includeMatchers, file.path);
-    const excluded = matchesAny(excludeMatchers, file.path) || autoExcluded.has(file.path);
-    if (matchesAny(excludeMatchers, file.path) || autoExcluded.has(file.path)) {
+    const includedByMask = filtersEnabled
+      ? options.includeGlobs.length === 0
+        ? true
+        : matchesAny(includeMatchers, file.path)
+      : false;
+    const excluded = (filtersEnabled && matchesAny(excludeMatchers, file.path)) || autoExcluded.has(file.path);
+    if ((filtersEnabled && matchesAny(excludeMatchers, file.path)) || autoExcluded.has(file.path)) {
       if (autoExcluded.has(file.path)) autoExcludedCount += 1;
     }
-    if ((manuallySelected || includedByMask) && !excluded) {
+    const passesFilter = filtersEnabled ? includedByMask : true;
+    if ((manuallySelected || passesFilter) && !excluded) {
       selectedFiles.push(file.path);
       selectedSizes.push(file.size);
     }

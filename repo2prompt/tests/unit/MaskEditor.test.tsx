@@ -16,9 +16,11 @@ describe('MaskEditor', () => {
       <MaskEditor
         includeGlobs={[]}
         excludeGlobs={[]}
+        filtersEnabled
         presets={presets}
         onChangeInclude={onInclude}
         onChangeExclude={vi.fn()}
+        onToggleFilters={vi.fn()}
       />
     );
     const input = screen.getAllByPlaceholderText(/pattern/)[0];
@@ -33,9 +35,11 @@ describe('MaskEditor', () => {
       <MaskEditor
         includeGlobs={[]}
         excludeGlobs={['node_modules/**']}
+        filtersEnabled
         presets={presets}
         onChangeInclude={vi.fn()}
         onChangeExclude={onExclude}
+        onToggleFilters={vi.fn()}
       />
     );
     await user.click(screen.getByRole('button', { name: /удалить node_modules/i }));
@@ -50,14 +54,37 @@ describe('MaskEditor', () => {
       <MaskEditor
         includeGlobs={[]}
         excludeGlobs={[]}
+        filtersEnabled
         presets={presets}
         onChangeInclude={onInclude}
         onChangeExclude={onExclude}
+        onToggleFilters={vi.fn()}
       />
     );
     await user.click(screen.getByRole('button', { name: /пресеты/i }));
     await user.click(screen.getByRole('menuitem', { name: /demo/i }));
     expect(onInclude).toHaveBeenCalledWith(presets[0].include);
     expect(onExclude).toHaveBeenCalledWith(presets[0].exclude);
+  });
+
+  it('disables controls when filters are off', async () => {
+    const onToggle = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <MaskEditor
+        includeGlobs={['src/**']}
+        excludeGlobs={['node_modules/**']}
+        filtersEnabled={false}
+        presets={presets}
+        onChangeInclude={vi.fn()}
+        onChangeExclude={vi.fn()}
+        onToggleFilters={onToggle}
+      />
+    );
+    expect(screen.getByText(/фильтры отключены/i)).toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: /включить фильтры/i });
+    await user.click(toggle);
+    expect(onToggle).toHaveBeenCalledWith(true);
+    expect(screen.getAllByPlaceholderText(/pattern/)[0]).toBeDisabled();
   });
 });

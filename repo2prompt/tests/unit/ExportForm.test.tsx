@@ -21,6 +21,7 @@ describe('ExportForm', () => {
       ref: 'main',
       includeGlobs: [],
       excludeGlobs: ['node_modules/**'],
+      filtersEnabled: true,
       selectedPaths: ['src/index.ts'],
       profile: 'short',
       format: 'md',
