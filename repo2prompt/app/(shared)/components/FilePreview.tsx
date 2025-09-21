@@ -42,7 +42,7 @@ export function FilePreview({ owner, repo, refName, path, maxKB }: FilePreviewPr
   }, [enabled, query, toMessage]);
 
   return (
-    <Card shadow="sm" className="h-full">
+    <Card shadow="sm" className="h-full border border-default-100 bg-white/80 backdrop-blur dark:bg-content1/60">
       <CardBody className="h-full space-y-3">
         <Tabs
           selectedKey={activeTab}

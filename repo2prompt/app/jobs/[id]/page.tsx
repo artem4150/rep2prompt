@@ -1,7 +1,8 @@
-'use client';
 import JobProgress from '@/components/JobProgress';
 
+type JobPageParams = Promise<{ id: string }> | { id: string };
 
-export default function JobPage({ params }: { params: { id: string } }) {
-return <JobProgress jobId={params.id} />;
+export default async function JobPage({ params }: { params: JobPageParams }) {
+  const resolved = params instanceof Promise ? await params : params;
+  return <JobProgress jobId={resolved.id} />;
 }

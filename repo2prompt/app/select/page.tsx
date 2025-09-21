@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Tabs, Tab, Spinner } from '@heroui/react';
+import { Button, Tabs, Tab, Spinner, Card, CardBody } from '@heroui/react';
+import { LayoutList, SlidersHorizontal, FileSearch, RotateCcw, ArrowRight } from 'lucide-react';
 import { TreeSelector } from '@/components/TreeSelector/TreeSelector';
 import MaskEditor, { type MaskPreset } from '@/components/MaskEditor';
 import FilePreview from '@/components/FilePreview';
@@ -47,6 +48,12 @@ const PRESETS: MaskPreset[] = [
     exclude: ['node_modules/**', 'dist/**', 'coverage/**'],
   },
 ];
+
+const helperBlocks = [
+  { key: 'tree', icon: LayoutList },
+  { key: 'masks', icon: SlidersHorizontal },
+  { key: 'preview', icon: FileSearch },
+] as const;
 
 export default function SelectPage() {
   const searchParams = useSearchParams();
@@ -109,58 +116,114 @@ export default function SelectPage() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <TreeSelector
-        items={items}
-        selectedPaths={selectedPaths}
-        includeGlobs={includeGlobs}
-        excludeGlobs={excludeGlobs}
-        autoExcludedPaths={autoExcludedPaths}
-        activePath={activePath}
-        loading={query.isLoading && items.length === 0}
-        onChangeSelection={setSelectedPaths}
-        onPreview={setActivePath}
-      />
-      <div className="space-y-4">
-        <Tabs aria-label="Selection tools">
-          <Tab key="masks" title={t('select.masks.include')}>
-            <MaskEditor
-              includeGlobs={includeGlobs}
-              excludeGlobs={excludeGlobs}
-              presets={PRESETS}
-              onChangeInclude={(next) => setMasks(next, excludeGlobs)}
-              onChangeExclude={(next) => setMasks(includeGlobs, next)}
-              onResetExclude={() => setMasks(includeGlobs, DEFAULT_EXCLUDE)}
-            />
-          </Tab>
-          <Tab key="preview" title={t('select.preview.title')}>
-            <FilePreview owner={owner} repo={repo} refName={ref} path={activePath} maxKB={256} />
-          </Tab>
-        </Tabs>
-        <div className="rounded-xl border border-default-100 bg-default-50 p-4 text-sm text-default-600">
-          <div className="font-medium text-default-700">
-            {t('select.selected')} {stats.selectedCount} / {stats.totalFiles}
+    <div className="space-y-8">
+      <Card shadow="sm" className="border border-default-100 bg-white/80 backdrop-blur dark:bg-content1/60">
+        <CardBody className="space-y-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <h1 className="text-2xl font-semibold text-default-900 dark:text-default-50">{t('select.title')}</h1>
+              <p className="text-sm text-default-500 dark:text-default-400">{t('select.subtitle')}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-medium text-default-600 dark:text-default-300">
+              <span className="rounded-full bg-default-100 px-3 py-1">
+                {t('select.selected')} {stats.selectedCount} / {stats.totalFiles}
+              </span>
+              <span className="rounded-full bg-default-100 px-3 py-1">
+                {t('select.approxSize', { size: formatBytes(stats.selectedSize) })}
+              </span>
+            </div>
           </div>
-          <div className="text-xs uppercase text-default-400">
-            {t('select.approxSize', { size: formatBytes(stats.selectedSize) })}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {helperBlocks.map(({ key, icon: Icon }) => (
+              <div
+                key={key}
+                className="flex items-start gap-3 rounded-2xl border border-default-100 bg-default-50/70 p-4 text-sm text-default-500 dark:text-default-400"
+              >
+                <span className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-300">
+                  <Icon className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="font-medium text-default-800 dark:text-default-100">
+                    {t(`select.helper.${key}.title` as const)}
+                  </p>
+                  <p className="text-xs text-default-500 dark:text-default-400">
+                    {t(`select.helper.${key}.description` as const)}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-        <div className="flex justify-between gap-3">
-          <Button
-            variant="light"
-            onPress={() => {
-              clearSelection();
-              setMasks([], DEFAULT_EXCLUDE);
-            }}
-          >
-            {t('select.cta.clear')}
-          </Button>
-          <Button
-            color="primary"
-            onPress={() => router.push(`/export?owner=${owner}&repo=${repo}&ref=${ref}`)}
-          >
-            {t('select.cta.next')}
-          </Button>
+        </CardBody>
+      </Card>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
+        <TreeSelector
+          items={items}
+          selectedPaths={selectedPaths}
+          includeGlobs={includeGlobs}
+          excludeGlobs={excludeGlobs}
+          autoExcludedPaths={autoExcludedPaths}
+          activePath={activePath}
+          loading={query.isLoading && items.length === 0}
+          onChangeSelection={setSelectedPaths}
+          onPreview={setActivePath}
+        />
+        <div className="flex flex-col gap-4">
+          <Card shadow="sm" className="border border-default-100 bg-white/80 backdrop-blur dark:bg-content1/60">
+            <CardBody className="space-y-4">
+              <Tabs aria-label="Selection tools">
+                <Tab key="masks" title={t('select.masks.include')}>
+                  <MaskEditor
+                    includeGlobs={includeGlobs}
+                    excludeGlobs={excludeGlobs}
+                    presets={PRESETS}
+                    onChangeInclude={(next) => setMasks(next, excludeGlobs)}
+                    onChangeExclude={(next) => setMasks(includeGlobs, next)}
+                    onResetExclude={() => setMasks(includeGlobs, DEFAULT_EXCLUDE)}
+                  />
+                </Tab>
+                <Tab key="preview" title={t('select.preview.title')}>
+                  <FilePreview owner={owner} repo={repo} refName={ref} path={activePath} maxKB={256} />
+                </Tab>
+              </Tabs>
+            </CardBody>
+          </Card>
+          <Card shadow="sm" className="border border-default-100 bg-white/80 backdrop-blur dark:bg-content1/60">
+            <CardBody className="space-y-3 text-sm text-default-600 dark:text-default-300">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-default-800 dark:text-default-100">
+                  {t('select.selected')} {stats.selectedCount} / {stats.totalFiles}
+                </span>
+                <span className="text-xs uppercase tracking-wide text-default-400">
+                  {t('select.approxSize', { size: formatBytes(stats.selectedSize) })}
+                </span>
+              </div>
+              {stats.autoExcludedCount > 0 && (
+                <p className="rounded-xl bg-warning-100/70 px-3 py-2 text-xs font-medium text-warning-700">
+                  {t('select.autoExcluded')}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-3 pt-1">
+                <Button
+                  variant="flat"
+                  startContent={<RotateCcw className="h-4 w-4" />}
+                  onPress={() => {
+                    clearSelection();
+                    setMasks([], DEFAULT_EXCLUDE);
+                  }}
+                >
+                  {t('select.cta.clear')}
+                </Button>
+                <Button
+                  color="primary"
+                  className="ml-auto"
+                  endContent={<ArrowRight className="h-4 w-4" />}
+                  onPress={() => router.push(`/export?owner=${owner}&repo=${repo}&ref=${ref}`)}
+                >
+                  {t('select.cta.next')}
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
         </div>
       </div>
     </div>
