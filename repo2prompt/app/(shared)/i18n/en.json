@@ -1,13 +1,128 @@
 {
-"landing": { "title": "Repo2Prompt", "cta": "Continue", "input": { "placeholder": "Paste GitHub link" } },
-"errors": {
-"bad_request": "Check the input",
-"not_found": "Repository not found",
-"rate_limited": "GitHub rate limit. Try later",
-"upstream_error": "GitHub/network error",
-"too_large": "Export is too large (500MB limit)",
-"unauthorized": "GitHub auth required",
-"unsupported_media_type": "Preview unavailable (binary/large file)",
-"generic": "Something went wrong"
-}
+  "landing": {
+    "title": "Repo2Prompt",
+    "subtitle": "Export repository structure into Prompt Pack formats.",
+    "input": {
+      "label": "Repository URL",
+      "placeholder": "https://github.com/owner/repo",
+      "helper": "Public and private GitHub repositories are supported"
+    },
+    "cta": "Continue",
+    "error": {
+      "invalid": "Enter a valid GitHub URL"
+    }
+  },
+  "analyze": {
+    "title": "Repository analytics",
+    "refs": {
+      "label": "Branch or tag"
+    },
+    "metrics": {
+      "files": "Files",
+      "dirs": "Folders",
+      "size": "Size",
+      "languages": "Top languages"
+    },
+    "warnings": {
+      "lfs": "LFS objects detected. They may be skipped during export.",
+      "submodule": "Submodules found. Export them separately if needed."
+    },
+    "cta": {
+      "next": "Select files"
+    }
+  },
+  "select": {
+    "title": "Select files",
+    "search": "Search path",
+    "selected": "Selected",
+    "total": "Total",
+    "approxSize": "≈ {size}",
+    "autoExcluded": "Some files are excluded automatically",
+    "masks": {
+      "include": "Include masks",
+      "exclude": "Exclude masks",
+      "add": "Add",
+      "placeholder": "pattern/**/*",
+      "presets": "Presets",
+      "reset": "Reset",
+      "empty": "No masks",
+      "remove": "Remove {pattern}"
+    },
+    "preview": {
+      "title": "Preview",
+      "empty": "Pick a file on the left",
+      "unavailable": "Preview unavailable",
+      "loading": "Loading...",
+      "truncated": "File truncated to {size} KB"
+    },
+    "cta": {
+      "clear": "Clear selection",
+      "next": "Next"
+    },
+    "empty": "Nothing to show. Adjust masks or branch.",
+    "largeTree": "Showing first {count} nodes. Narrow the selection to speed things up."
+  },
+  "export": {
+    "title": "Export settings",
+    "format": "Format",
+    "profile": "Profile",
+    "tokenModel": "Token model",
+    "secretScan": "Scan secrets",
+    "secretStrategy": "Secret strategy",
+    "ttl": "TTL (hours)",
+    "maxBinary": "Max binary size (MB)",
+    "submit": "Start export",
+    "disabled": "Select at least one file"
+  },
+  "jobs": {
+    "title": "Export job",
+    "stage": {
+      "prepare": "Preparing",
+      "download": "Downloading",
+      "filter": "Filtering",
+      "generate": "Generating",
+      "write": "Writing artifacts",
+      "finish": "Finishing"
+    },
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "done": "Done",
+      "error": "Error",
+      "timeout": "Timeout",
+      "canceled": "Canceled"
+    }
+  },
+  "result": {
+    "title": "Export results",
+    "ttl": "Links expire in {hours} h",
+    "download": "Download",
+    "empty": "No artifacts found",
+    "createMore": "Create another"
+  },
+  "common": {
+    "actions": {
+      "back": "Back",
+      "retry": "Retry"
+    },
+    "badges": {
+      "lfs": "LFS",
+      "submodule": "Submodule",
+      "autoExcluded": "auto"
+    }
+  },
+  "errors": {
+    "bad_request": "Check the input data",
+    "not_found": "Repository not found",
+    "rate_limited": "GitHub rate limit exceeded. Try again later",
+    "upstream_error": "GitHub or network error",
+    "too_large": "Export is too large (limit 500 MB)",
+    "unauthorized": "GitHub authentication required",
+    "unsupported_media_type": "Preview unavailable (binary file)",
+    "export_failed": "Export finished with error",
+    "timeout": "Request timed out",
+    "generic": "Something went wrong"
+  }
 }

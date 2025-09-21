@@ -1,24 +1,47 @@
 'use client';
+
 import { Select, SelectItem } from '@heroui/react';
-import { useQuery } from '@tanstack/react-query';
-import { endpoints } from '@/api/endpoints';
-import { useEffect } from 'react';
+import { useTransition } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useI18n } from '@/i18n/provider';
 
+export type RefSelectorProps = {
+  owner: string;
+  repo: string;
+  ref: string;
+  refs: string[];
+  onChangeRef: (ref: string) => void;
+};
 
-export default function RefSelector({ owner, repo, currentRef, onChange }:{ owner:string; repo:string; currentRef:string; onChange:(r:string)=>void }){
-const { data } = useQuery({
-queryKey: ['repo', owner, repo],
-queryFn: () => endpoints.resolveRepo(`https://github.com/${owner}/${repo}`),
-enabled: !!owner && !!repo
-});
+export function RefSelector({ owner, repo, ref, refs, onChangeRef }: RefSelectorProps) {
+  const { t } = useI18n();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [pending, startTransition] = useTransition();
 
-
-useEffect(()=>{ if (data && !data.refs.includes(currentRef)) onChange(data.defaultRef); },[data]);
-
-
-return (
-<Select label="Ветка/тег" selectedKeys={[currentRef]} onChange={(e)=>onChange(e.target.value)}>
-{(data?.refs ?? []).map(r => <SelectItem key={r}>{r}</SelectItem>)}
-</Select>
-);
+  return (
+    <Select
+      label={t('analyze.refs.label')}
+      selectedKeys={ref ? new Set([ref]) : new Set()}
+      isLoading={pending}
+      onSelectionChange={(keys) => {
+        const value = Array.from(keys as Set<string>)[0];
+        if (!value) return;
+        onChangeRef(value);
+        startTransition(() => {
+          const params = new URLSearchParams(searchParams.toString());
+          params.set('owner', owner);
+          params.set('repo', repo);
+          params.set('ref', value);
+          router.replace(`/analyze?${params.toString()}`);
+        });
+      }}
+    >
+      {refs.map((item) => (
+        <SelectItem key={item}>{item}</SelectItem>
+      ))}
+    </Select>
+  );
 }
+
+export default RefSelector;

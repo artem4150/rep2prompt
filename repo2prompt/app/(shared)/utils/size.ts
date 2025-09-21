@@ -1,6 +1,11 @@
-export function formatBytes(b:number){
-if (b===0) return '0 B';
-const k = 1024; const dm = 2; const sizes = ['B','KB','MB','GB'];
-const i = Math.floor(Math.log(b)/Math.log(k));
-return parseFloat((b/Math.pow(k,i)).toFixed(dm)) + ' ' + sizes[i];
+export function formatBytes(bytes: number, fractionDigits = 1) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** index;
+  return `${value.toFixed(index === 0 ? 0 : fractionDigits)} ${units[index]}`;
+}
+
+export function sumSizes(values: Array<number | undefined>) {
+  return values.reduce((acc, value) => acc + (value ?? 0), 0);
 }

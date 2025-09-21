@@ -1,37 +1,115 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { ResolveRepoResp, TreeItem } from '@/api/types';
 
-export type Store = {
-  repoUrl: string;
-  owner: string; repo: string; ref: string; refs: string[];
-  includeGlobs: string[]; excludeGlobs: string[];
-  profile: 'short'|'full'|'rag';
-  format: 'zip'|'md'|'txt';
-  secretScan: boolean; secretStrategy: 'REDACTED'|'STRIP'|'MARK';
-  tokenModel: 'openai'|'deepseek';
-  ttlHours: number; maxBinarySizeMB: number;
+type SecretStrategy = 'REDACTED' | 'STRIP' | 'MARK';
+type TokenModel = 'openai' | 'deepseek';
+type ExportFormat = 'zip' | 'md' | 'txt';
+type ExportProfile = 'short' | 'full' | 'rag';
 
-  set: (p: Partial<Store>) => void;
-  setRepoMeta: (p:{owner:string; repo:string; ref:string})=>void;
-  setRepoMetaFromResolve: (r:{owner:string; repo:string; defaultRef:string; refs:string[]})=>void;
-  setMasks: (i:string[], e:string[])=>void;
+type SelectionState = {
+  selectedPaths: string[];
+  autoExcludedPaths: string[];
 };
 
-export const useStore = create<Store>()(persist((set)=>({
+export type Store = SelectionState & {
+  repoUrl: string;
+  owner: string;
+  repo: string;
+  ref: string;
+  refs: string[];
+  tree: TreeItem[];
+  includeGlobs: string[];
+  excludeGlobs: string[];
+  profile: ExportProfile;
+  format: ExportFormat;
+  secretScan: boolean;
+  secretStrategy: SecretStrategy;
+  tokenModel: TokenModel;
+  ttlHours: number;
+  maxBinarySizeMB: number;
+
+  setRepoUrl: (url: string) => void;
+  setRepoMetaFromResolve: (payload: ResolveRepoResp) => void;
+  setRepoMeta: (payload: { owner: string; repo: string; ref: string }) => void;
+  setRef: (ref: string) => void;
+  setRefs: (refs: string[]) => void;
+  setTree: (items: TreeItem[]) => void;
+  resetRepo: () => void;
+  setMasks: (include: string[], exclude: string[]) => void;
+  setSelectedPaths: (paths: string[]) => void;
+  clearSelection: () => void;
+  setAutoExcludedPaths: (paths: string[]) => void;
+  updateSettings: (payload: Partial<Pick<Store,
+    'profile' | 'format' | 'secretScan' | 'secretStrategy' | 'tokenModel' | 'ttlHours' | 'maxBinarySizeMB'
+  >>) => void;
+};
+
+const initialSelection: SelectionState = {
+  selectedPaths: [],
+  autoExcludedPaths: [],
+};
+
+const initialState = {
   repoUrl: '',
-  owner: '', repo: '', ref: '', refs: [],
-  includeGlobs: [],
-  excludeGlobs: ['**/*.test.*','**/.git/**','node_modules/**'],
-  profile: 'short',
-  format: 'md',
+  owner: '',
+  repo: '',
+  ref: '',
+  refs: [] as string[],
+  tree: [] as TreeItem[],
+  includeGlobs: [] as string[],
+  excludeGlobs: ['**/*.test.*', '**/.git/**', 'node_modules/**'] as string[],
+  profile: 'short' as ExportProfile,
+  format: 'md' as ExportFormat,
   secretScan: false,
-  secretStrategy: 'REDACTED',
-  tokenModel: 'openai',
+  secretStrategy: 'REDACTED' as SecretStrategy,
+  tokenModel: 'openai' as TokenModel,
   ttlHours: 24,
   maxBinarySizeMB: 50,
+};
 
-  set: (p)=>set(p),
-  setRepoMeta: (p)=>set(p),
-  setRepoMetaFromResolve: (r)=>set({ owner:r.owner, repo:r.repo, ref:r.defaultRef, refs:r.refs }),
-  setMasks: (i,e)=>set({ includeGlobs:i, excludeGlobs:e })
-}),{ name:'repo2prompt' }));
+export const useStore = create<Store>()(
+  persist(
+    (set) => ({
+      ...initialState,
+      ...initialSelection,
+      setRepoUrl: (repoUrl) => set({ repoUrl }),
+      setRepoMetaFromResolve: ({ owner, repo, defaultRef, refs }) =>
+        set({ owner, repo, ref: defaultRef, refs, selectedPaths: [], autoExcludedPaths: [] }),
+      setRepoMeta: ({ owner, repo, ref }) => set({ owner, repo, ref }),
+      setRef: (ref) => set({ ref }),
+      setRefs: (refs) => set({ refs }),
+      setTree: (tree) => set({ tree }),
+      resetRepo: () =>
+        set({
+          owner: '',
+          repo: '',
+          ref: '',
+          refs: [],
+          tree: [],
+          selectedPaths: [],
+          autoExcludedPaths: [],
+        }),
+      setMasks: (include, exclude) => set({ includeGlobs: include, excludeGlobs: exclude }),
+      setSelectedPaths: (paths) => {
+        const unique = Array.from(new Set(paths.filter(Boolean)));
+        set({ selectedPaths: unique });
+      },
+      clearSelection: () => set({ selectedPaths: [] }),
+      setAutoExcludedPaths: (paths) => set({ autoExcludedPaths: paths }),
+      updateSettings: (payload) => set(payload),
+    }),
+    {
+      name: 'repo2prompt',
+      partialize: (state) => ({
+        repoUrl: state.repoUrl,
+        includeGlobs: state.includeGlobs,
+        excludeGlobs: state.excludeGlobs,
+        profile: state.profile,
+        format: state.format,
+        tokenModel: state.tokenModel,
+        secretStrategy: state.secretStrategy,
+      }),
+    }
+  )
+);
