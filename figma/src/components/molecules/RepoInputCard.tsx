@@ -5,11 +5,23 @@ import { Input } from '../ui/input';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Github, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { ApiError, resolveRepository } from '../../lib/api';
+import { RepoData } from '../../lib/types';
 
 type State = 'idle' | 'validating' | 'resolving' | 'error';
 
 export const RepoInputCard: React.FC = () => {
-  const { language, setCurrentPage, setRepoData } = useAppContext();
+  const {
+    language,
+    setCurrentPage,
+    setRepoData,
+    setTreeItems,
+    setTreeSource,
+    setSelectedPaths,
+    setCurrentJob,
+    setArtifacts,
+    setArtifactsExpiresAt,
+  } = useAppContext();
   const [url, setUrl] = useState('');
   const [state, setState] = useState<State>('idle');
   const [error, setError] = useState('');
@@ -44,9 +56,18 @@ export const RepoInputCard: React.FC = () => {
     return githubRegex.test(url);
   };
 
+  const resetRepositoryState = () => {
+    setTreeItems([]);
+    setTreeSource(null);
+    setSelectedPaths([]);
+    setCurrentJob(null);
+    setArtifacts([]);
+    setArtifactsExpiresAt(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateGitHubUrl(url)) {
       setState('error');
       setError(t.errorInvalidUrl);
@@ -56,39 +77,37 @@ export const RepoInputCard: React.FC = () => {
     setState('validating');
     setError('');
 
-    // Simulate API call
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
       setState('resolving');
-      
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock successful response
-      const mockRepoData = {
-        url,
-        name: url.split('/').slice(-1)[0],
-        owner: url.split('/').slice(-2, -1)[0],
-        refs: ['main', 'develop', 'feature/new-ui', 'v1.0.0', 'v1.1.0'],
-        currentRef: 'main',
-        stats: {
-          files: 1283,
-          size: '46 MB',
-          languages: [
-            { name: 'TypeScript', percentage: 62 },
-            { name: 'Go', percentage: 24 },
-            { name: 'Markdown', percentage: 8 },
-            { name: 'Other', percentage: 6 },
-          ],
-        },
-        warnings: ['Large binary files detected', 'LFS files found'],
+      const resolved = await resolveRepository(url.trim());
+      const refs = resolved.Refs?.length ? resolved.Refs : [resolved.DefaultRef];
+      const repo: RepoData = {
+        url: url.trim(),
+        owner: resolved.Owner,
+        repo: resolved.Repo,
+        defaultRef: resolved.DefaultRef,
+        currentRef: resolved.DefaultRef,
+        refs,
       };
-      
-      setRepoData(mockRepoData);
+      setRepoData(repo);
+      resetRepositoryState();
       setState('idle');
       setCurrentPage('analyze');
-    } catch (error) {
+    } catch (err) {
       setState('error');
-      setError(t.errorNotFound);
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          setError(t.errorNotFound);
+        } else if (err.status === 429 || err.code === 'rate_limited') {
+          setError(t.errorRateLimit);
+        } else if (err.status === 400) {
+          setError(t.errorInvalidUrl);
+        } else {
+          setError(err.message || t.errorNotFound);
+        }
+      } else {
+        setError(t.errorNotFound);
+      }
     }
   };
 

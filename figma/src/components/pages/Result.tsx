@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useAppContext } from '../../App';
 import { ArtifactsList } from '../molecules/ArtifactsList';
 import { Button } from '../ui/button';
@@ -6,50 +6,60 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { CheckCircle2, Plus } from 'lucide-react';
 
 export const Result: React.FC = () => {
-  const { language, setCurrentPage } = useAppContext();
+  const {
+    language,
+    setCurrentPage,
+    artifacts,
+    artifactsExpiresAt,
+    setCurrentJob,
+    setArtifacts,
+    setArtifactsExpiresAt,
+    setSelectedPaths,
+    setTreeItems,
+  } = useAppContext();
 
   const texts = {
     ru: {
       title: 'Готово!',
       description: 'Ваш экспорт успешно создан',
-      ttlWarning: 'Ссылки истекут через 72 часа',
+      ttlWarning: (ts: string) => `Ссылки истекут ${ts}`,
       createAnother: 'Создать ещё',
       backToStart: 'К началу',
+      empty: 'Артефакты недоступны. Попробуйте выполнить экспорт ещё раз.',
     },
     en: {
       title: 'Done!',
       description: 'Your export has been created successfully',
-      ttlWarning: 'Links will expire in 72 hours',
+      ttlWarning: (ts: string) => `Links will expire ${ts}`,
       createAnother: 'Create another',
       backToStart: 'Back to start',
+      empty: 'Artifacts are not available. Try exporting again.',
     },
   };
 
   const t = texts[language];
 
-  const mockArtifacts = [
-    {
-      id: '1',
-      name: 'PromptPack-Short.md',
-      type: 'md' as const,
-      size: '128 KB',
-      url: '#',
-    },
-    {
-      id: '2', 
-      name: 'Export.zip',
-      type: 'zip' as const,
-      size: '14.2 MB',
-      url: '#',
-    },
-    {
-      id: '3',
-      name: 'Concat.txt',
-      type: 'txt' as const,
-      size: '1.3 MB', 
-      url: '#',
-    },
-  ];
+  const expiresAtText = useMemo(() => {
+    if (!artifactsExpiresAt) {
+      return null;
+    }
+    const date = new Date(artifactsExpiresAt);
+    return t.ttlWarning(date.toLocaleString());
+  }, [artifactsExpiresAt, t]);
+
+  const handleReset = () => {
+    setCurrentJob(null);
+    setArtifacts([]);
+    setArtifactsExpiresAt(null);
+    setSelectedPaths([]);
+    setTreeItems([]);
+    setCurrentPage('landing');
+  };
+
+  const handleCreateAnother = () => {
+    setSelectedPaths([]);
+    setCurrentPage('select');
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -63,24 +73,31 @@ export const Result: React.FC = () => {
         </div>
 
         <div className="space-y-6">
-          <Alert>
-            <AlertDescription>
-              {t.ttlWarning}
-            </AlertDescription>
-          </Alert>
+          {expiresAtText && (
+            <Alert>
+              <AlertDescription>{expiresAtText}</AlertDescription>
+            </Alert>
+          )}
 
-          <ArtifactsList artifacts={mockArtifacts} />
+          {artifacts.length > 0 ? (
+            <ArtifactsList artifacts={artifacts} />
+          ) : (
+            <Alert variant="destructive">
+              <AlertDescription>{t.empty}</AlertDescription>
+            </Alert>
+          )}
 
           <div className="flex justify-center gap-4 pt-6">
-            <Button 
+            <Button
               variant="outline"
-              onClick={() => setCurrentPage('landing')}
+              onClick={handleReset}
             >
               {t.backToStart}
             </Button>
-            <Button 
-              onClick={() => setCurrentPage('select')}
+            <Button
+              onClick={handleCreateAnother}
               className="gap-2"
+              disabled={artifacts.length === 0}
             >
               <Plus className="w-4 h-4" />
               {t.createAnother}

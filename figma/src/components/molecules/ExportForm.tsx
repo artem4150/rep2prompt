@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAppContext } from '../../App';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -8,16 +8,29 @@ import { Switch } from '../ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Slider } from '../ui/slider';
 import { Separator } from '../ui/separator';
-import { Play, Settings, FileArchive, FileText, File } from 'lucide-react';
+import { Alert, AlertDescription } from '../ui/alert';
+import { Play, Settings, FileArchive, FileText, File, Loader2 } from 'lucide-react';
+import { ApiError, createExport } from '../../lib/api';
 
 export const ExportForm: React.FC = () => {
-  const { language, setCurrentPage } = useAppContext();
+  const {
+    language,
+    setCurrentPage,
+    repoData,
+    includeMasks,
+    excludeMasks,
+    setCurrentJob,
+    setArtifacts,
+    setArtifactsExpiresAt,
+  } = useAppContext();
   const [format, setFormat] = useState('md');
   const [profile, setProfile] = useState('short');
   const [secretScan, setSecretScan] = useState(true);
   const [tokenModel, setTokenModel] = useState('openai');
   const [ttl, setTtl] = useState([72]);
   const [maxBinarySize, setMaxBinarySize] = useState([25]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const texts = {
     ru: {
@@ -55,14 +68,61 @@ export const ExportForm: React.FC = () => {
       maxBinaryLabel: 'Max Binary File Size (MB)',
       createExport: 'Create Export',
       advanced: 'Advanced Settings',
+      errorNoRepo: 'Сначала выберите репозиторий.',
+      errorGeneric: 'Не удалось создать экспорт.',
+      errorNoRepoEn: 'Please resolve a repository first.',
+      errorGenericEn: 'Failed to create export.',
     },
   };
 
   const t = texts[language];
 
+  const tokenModelId = useMemo(() => {
+    switch (tokenModel) {
+      case 'deepseek':
+        return 'deepseek:coder';
+      case 'claude':
+        return 'anthropic:claude-3.5-sonnet';
+      default:
+        return 'openai:gpt-4o';
+    }
+  }, [tokenModel]);
+
   const handleSubmit = () => {
-    // Mock export creation
-    setCurrentPage('jobs');
+    if (!repoData) {
+      setError(language === 'ru' ? texts.ru.errorNoRepo : texts.en.errorNoRepoEn);
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    createExport({
+      owner: repoData.owner,
+      repo: repoData.repo,
+      ref: repoData.currentRef,
+      format: format as 'zip' | 'md' | 'txt',
+      profile,
+      includeGlobs: includeMasks,
+      excludeGlobs: excludeMasks,
+      secretScan,
+      secretStrategy: 'mask',
+      tokenModel: tokenModelId,
+      maxBinarySizeMB: maxBinarySize[0],
+      ttlHours: ttl[0],
+    })
+      .then((resp) => {
+        setArtifacts([]);
+        setArtifactsExpiresAt(null);
+        setCurrentJob({ id: resp.jobId, state: 'queued', progress: 0 });
+        setCurrentPage('jobs');
+      })
+      .catch((err) => {
+        if (err instanceof ApiError) {
+          setError(err.message);
+        } else {
+          setError(language === 'ru' ? texts.ru.errorGeneric : texts.en.errorGenericEn);
+        }
+      })
+      .finally(() => setSubmitting(false));
   };
 
   return (
@@ -196,8 +256,14 @@ export const ExportForm: React.FC = () => {
       </Card>
 
       {/* Submit Button */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex justify-end">
-        <Button onClick={handleSubmit} size="lg" className="gap-2">
+        <Button onClick={handleSubmit} size="lg" className="gap-2" disabled={submitting}>
+          {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
           <Play className="w-4 h-4" />
           {t.createExport}
         </Button>

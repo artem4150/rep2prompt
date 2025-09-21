@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../../App';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -6,8 +6,12 @@ import { Badge } from '../ui/badge';
 import { GitBranch } from 'lucide-react';
 
 export const RefSelector: React.FC = () => {
-  const { language, repoData, setRepoData } = useAppContext();
+  const { language, repoData, setRepoData, setSelectedPaths, setTreeItems, setTreeSource } = useAppContext();
   const [selectedRef, setSelectedRef] = useState(repoData?.currentRef || 'main');
+
+  useEffect(() => {
+    setSelectedRef(repoData?.currentRef || 'main');
+  }, [repoData?.currentRef]);
 
   const texts = {
     ru: {
@@ -26,10 +30,17 @@ export const RefSelector: React.FC = () => {
 
   const handleRefChange = (newRef: string) => {
     setSelectedRef(newRef);
-    setRepoData({
-      ...repoData,
-      currentRef: newRef,
-    });
+    setRepoData((prev) =>
+      prev
+        ? {
+            ...prev,
+            currentRef: newRef,
+          }
+        : prev
+    );
+    setSelectedPaths([]);
+    setTreeItems([]);
+    setTreeSource(null);
   };
 
   return (
