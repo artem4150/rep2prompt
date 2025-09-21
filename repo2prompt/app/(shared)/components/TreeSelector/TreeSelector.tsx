@@ -88,7 +88,7 @@ export function TreeSelector({
 
   if (loading) {
     return (
-      <Card>
+      <Card className="border border-default-100 bg-white/80 backdrop-blur dark:bg-content1/60">
         <CardBody className="flex h-[460px] items-center justify-center">
           <Spinner label={t('select.preview.loading')} />
         </CardBody>
@@ -98,7 +98,7 @@ export function TreeSelector({
 
   if (!items.length) {
     return (
-      <Card>
+      <Card className="border border-default-100 bg-white/80 backdrop-blur dark:bg-content1/60">
         <CardBody className="flex h-[460px] items-center justify-center text-sm text-default-500">
           {t('select.empty')}
         </CardBody>
@@ -112,7 +112,7 @@ export function TreeSelector({
   const limited = flattenTree(tree, collapsed, query).length > MAX_RENDERED;
 
   return (
-    <Card shadow="sm">
+    <Card shadow="sm" className="border border-default-100 bg-white/80 backdrop-blur dark:bg-content1/60">
       <CardBody className="space-y-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>

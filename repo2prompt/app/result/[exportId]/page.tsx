@@ -1,7 +1,8 @@
-'use client';
 import ArtifactsList from '@/components/ArtifactsList';
 
+type ResultPageParams = Promise<{ exportId: string }> | { exportId: string };
 
-export default function ResultPage({ params }: { params: { exportId: string } }) {
-return <ArtifactsList exportId={params.exportId} />;
+export default async function ResultPage({ params }: { params: ResultPageParams }) {
+  const resolved = params instanceof Promise ? await params : params;
+  return <ArtifactsList exportId={resolved.exportId} />;
 }

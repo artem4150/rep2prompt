@@ -41,7 +41,7 @@ export function MaskEditor({
   const [excludeInput, setExcludeInput] = useState('');
 
   return (
-    <Card shadow="sm">
+    <Card shadow="sm" className="border border-default-100 bg-white/80 backdrop-blur dark:bg-content1/60">
       <CardBody className="space-y-5">
         <section className="space-y-3">
           <div className="flex items-center justify-between">
