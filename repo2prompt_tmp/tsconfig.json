@@ -1,0 +1,61 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "DOM",
+      "ES2022"
+    ],
+    "jsx": "preserve",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "allowJs": false,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/components/*": [
+        "app/(shared)/components/*"
+      ],
+      "@/hooks/*": [
+        "app/(shared)/hooks/*"
+      ],
+      "@/api/*": [
+        "app/(shared)/services/api/*"
+      ],
+      "@/state/*": [
+        "app/(shared)/state/*"
+      ],
+      "@/i18n/*": [
+        "app/(shared)/i18n/*"
+      ],
+      "@/utils/*": [
+        "app/(shared)/utils/*"
+      ],
+      "@/mocks/*": [
+        "app/(shared)/mocks/*"
+      ]
+    },
+    "noEmit": true,
+    "incremental": true,
+    "isolatedModules": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
