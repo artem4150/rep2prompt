@@ -5,7 +5,11 @@
 
   ## Running the code
 
-  Run `npm i` to install the dependencies.
+  1. Install dependencies with `npm i`.
+  2. Start the Go backend from `../backend` (for example with `go run ./cmd/api`). It listens on port `8080` by default.
+  3. Start the frontend dev server with `npm run dev`.
 
-  Run `npm run dev` to start the development server.
+  The Vite dev server proxies any `/api/*` calls to `http://localhost:8080`, so the UI uses real backend data without extra configuration. You can point the proxy to another backend URL by exporting `VITE_DEV_API_PROXY` (or `API_PROXY_TARGET`) before starting `npm run dev`.
+
+  For production builds where the frontend is hosted separately from the backend, set `VITE_API_BASE_URL` to the backend origin before running `npm run build`.
   

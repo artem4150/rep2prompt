@@ -1,14 +1,14 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useAppContext } from '../../App';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Progress } from '../ui/progress';
 import { Badge } from '../ui/badge';
 import { Alert, AlertDescription } from '../ui/alert';
-import { 
-  CheckCircle2, 
-  Clock, 
-  Loader2, 
+import {
+  CheckCircle2,
+  Clock,
+  Loader2,
   Square,
   Download,
   Filter,
@@ -16,15 +16,19 @@ import {
   Save,
   CheckSquare
 } from 'lucide-react';
+import { JobStatus } from '../../lib/types';
 
 interface JobProgressProps {
   progress: number;
-  currentStage: number;
   jobId: string;
+  state: JobStatus;
+  error?: string | null;
+  onCancel: () => void;
+  cancelDisabled?: boolean;
 }
 
-export const JobProgress: React.FC<JobProgressProps> = ({ progress, currentStage, jobId }) => {
-  const { language, setCurrentPage } = useAppContext();
+export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state, error, onCancel, cancelDisabled }) => {
+  const { language } = useAppContext();
 
   const texts = {
     ru: {
@@ -49,6 +53,11 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, currentStage
       statusPending: 'Ожидает',
       statusRunning: 'Выполняется',
       statusCompleted: 'Завершено',
+      statusCanceled: 'Отменено',
+      statusError: 'Ошибка',
+      statusTimeout: 'Таймаут',
+      job: 'Задача',
+      canceledNotice: 'Задача была отменена.',
     },
     en: {
       progress: 'Progress',
@@ -72,6 +81,11 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, currentStage
       statusPending: 'Pending',
       statusRunning: 'Running',
       statusCompleted: 'Completed',
+      statusCanceled: 'Canceled',
+      statusError: 'Error',
+      statusTimeout: 'Timed out',
+      job: 'Job',
+      canceledNotice: 'The job was canceled.',
     },
   };
 
@@ -86,9 +100,21 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, currentStage
     CheckSquare,
   ];
 
+  const currentStage = useMemo(() => {
+    if (progress >= 100) {
+      return stageIcons.length - 1;
+    }
+    if (progress > 80) return 5;
+    if (progress > 65) return 4;
+    if (progress > 45) return 3;
+    if (progress > 25) return 2;
+    if (progress > 10) return 1;
+    return 0;
+  }, [progress]);
+
   const getStageStatus = (stageIndex: number) => {
-    if (stageIndex < currentStage) return 'completed';
-    if (stageIndex === currentStage) return 'running';
+    if (progress >= 100 || stageIndex < currentStage) return 'completed';
+    if (stageIndex === currentStage && state === 'running') return 'running';
     return 'pending';
   };
 
@@ -118,9 +144,23 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, currentStage
     }
   };
 
-  const handleCancel = () => {
-    // Simulate cancellation
-    setCurrentPage('export');
+  const renderStateBadge = () => {
+    switch (state) {
+      case 'done':
+        return <Badge variant="secondary">{t.statusCompleted}</Badge>;
+      case 'running':
+        return <Badge variant="default">{t.statusRunning}</Badge>;
+      case 'queued':
+        return <Badge variant="outline">{t.statusPending}</Badge>;
+      case 'canceled':
+        return <Badge variant="outline">{t.statusCanceled}</Badge>;
+      case 'timeout':
+        return <Badge variant="destructive">{t.statusTimeout}</Badge>;
+      case 'error':
+        return <Badge variant="destructive">{t.statusError}</Badge>;
+      default:
+        return null;
+    }
   };
 
   return (
@@ -129,22 +169,28 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, currentStage
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>{t.progress}</span>
-            <span className="text-2xl font-mono">{Math.round(progress)}%</span>
+            <span>
+              {t.progress} #{jobId}
+            </span>
+            <div className="flex items-center gap-2">
+              {renderStateBadge()}
+              <span className="text-2xl font-mono">{Math.round(progress)}%</span>
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <Progress value={progress} className="h-3" />
-          
+
           <div className="flex justify-between items-center">
             <div className="text-sm text-muted-foreground">
               {t.stages[currentStage]} - {t.stageDescriptions[currentStage]}
             </div>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={handleCancel}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCancel}
               className="gap-2"
+              disabled={cancelDisabled || state !== 'running'}
             >
               <Square className="w-4 h-4" />
               {t.cancel}
@@ -181,12 +227,26 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, currentStage
         </CardContent>
       </Card>
 
-      {progress >= 100 && (
+      {state === 'done' && (
         <Alert>
           <CheckCircle2 className="h-4 w-4" />
           <AlertDescription>
-            Задача успешно завершена! Переход к результатам...
+            {language === 'ru'
+              ? 'Задача успешно завершена! Переходим к результатам...'
+              : 'Job finished successfully! Redirecting to results...'}
           </AlertDescription>
+        </Alert>
+      )}
+
+      {state === 'canceled' && (
+        <Alert>
+          <AlertDescription>{t.canceledNotice}</AlertDescription>
+        </Alert>
+      )}
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
     </div>

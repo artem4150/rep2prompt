@@ -1,18 +1,24 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../../App';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Badge } from '../ui/badge';
 import { ScrollArea } from '../ui/scroll-area';
-import { Eye, Code, AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription } from '../ui/alert';
+import { Eye, Code, AlertTriangle, Loader2 } from 'lucide-react';
+import { ApiError, fetchFilePreview } from '../../lib/api';
 
 interface FilePreviewProps {
   filePath: string;
 }
 
 export const FilePreview: React.FC<FilePreviewProps> = ({ filePath }) => {
-  const { language } = useAppContext();
+  const { language, repoData } = useAppContext();
   const [activeTab, setActiveTab] = useState('raw');
+  const [content, setContent] = useState('');
+  const [truncated, setTruncated] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const texts = {
     ru: {
@@ -22,6 +28,8 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ filePath }) => {
       truncated: 'Обрезано',
       unavailable: 'Предпросмотр недоступен (бинарный файл)',
       tooLarge: 'Файл слишком большой для предпросмотра',
+      loading: 'Загружаем содержимое...',
+      genericError: 'Не удалось получить предпросмотр файла.',
     },
     en: {
       preview: 'Preview',
@@ -30,123 +38,55 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ filePath }) => {
       truncated: 'Truncated',
       unavailable: 'Preview unavailable (binary file)',
       tooLarge: 'File too large for preview',
+      loading: 'Loading content...',
+      genericError: 'Failed to load file preview.',
     },
   };
 
   const t = texts[language];
 
-  // Mock file content based on file extension
-  const getFileContent = (path: string) => {
-    const ext = path.split('.').pop()?.toLowerCase();
-    
-    if (path.includes('large-dataset.csv')) {
-      return {
-        type: 'unavailable',
-        content: '',
-        reason: t.tooLarge,
-      };
+  useEffect(() => {
+    if (!repoData) {
+      return;
     }
-    
-    if (['ico', 'png', 'jpg', 'jpeg', 'gif'].includes(ext || '')) {
-      return {
-        type: 'unavailable',
-        content: '',
-        reason: t.unavailable,
-      };
-    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetchFilePreview({
+      owner: repoData.owner,
+      repo: repoData.repo,
+      ref: repoData.currentRef,
+      path: filePath,
+    })
+      .then((resp) => {
+        if (cancelled) {
+          return;
+        }
+        setContent(resp.content);
+        setTruncated(resp.truncated);
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        if (err instanceof ApiError) {
+          setError(err.message);
+        } else {
+          setError(t.genericError);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
 
-    if (ext === 'tsx' || ext === 'ts') {
-      return {
-        type: 'code',
-        content: `import React from 'react';
-import { Button } from './ui/button';
-
-interface Props {
-  title: string;
-  onClick: () => void;
-}
-
-export const Component: React.FC<Props> = ({ title, onClick }) => {
-  return (
-    <div className="p-4">
-      <h2 className="text-lg font-semibold mb-4">{title}</h2>
-      <Button onClick={onClick}>
-        Click me
-      </Button>
-    </div>
-  );
-};`,
-        isTruncated: false,
-      };
-    }
-
-    if (ext === 'md') {
-      return {
-        type: 'markdown',
-        content: `# ${path.split('/').pop()}
-
-## Overview
-
-This is a documentation file that contains important information about the project.
-
-### Features
-
-- Feature 1: Awesome functionality
-- Feature 2: Great performance
-- Feature 3: Easy to use
-
-### Installation
-
-\`\`\`bash
-npm install package-name
-\`\`\`
-
-### Usage
-
-\`\`\`typescript
-import { Component } from 'package-name';
-
-const App = () => {
-  return <Component title="Hello World" />;
-};
-\`\`\``,
-        isTruncated: true,
-      };
-    }
-
-    if (ext === 'json') {
-      return {
-        type: 'json',
-        content: JSON.stringify({
-          name: "repo2prompt",
-          version: "1.0.0",
-          description: "Convert GitHub repositories to prompt-ready formats",
-          main: "index.js",
-          scripts: {
-            start: "react-scripts start",
-            build: "react-scripts build",
-            test: "react-scripts test"
-          },
-          dependencies: {
-            react: "^18.0.0",
-            "react-dom": "^18.0.0",
-            typescript: "^4.9.0"
-          }
-        }, null, 2),
-        isTruncated: false,
-      };
-    }
-
-    return {
-      type: 'text',
-      content: `Content of ${path}`,
-      isTruncated: false,
+    return () => {
+      cancelled = true;
     };
-  };
+  }, [filePath, repoData?.owner, repoData?.repo, repoData?.currentRef, t.genericError]);
 
-  const fileContent = getFileContent(filePath);
-
-  if (fileContent.type === 'unavailable') {
+  if (loading) {
     return (
       <Card>
         <CardHeader>
@@ -156,12 +96,29 @@ const App = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-32 text-muted-foreground">
-            <div className="text-center">
-              <AlertTriangle className="w-8 h-8 mx-auto mb-2" />
-              <p>{fileContent.reason}</p>
-            </div>
+          <div className="flex items-center justify-center h-32 gap-2 text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>{t.loading}</span>
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Eye className="w-5 h-5" />
+            {t.preview}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
     );
@@ -175,7 +132,7 @@ const App = () => {
             <Eye className="w-5 h-5" />
             {t.preview}
           </CardTitle>
-          {fileContent.isTruncated && (
+          {truncated && (
             <Badge variant="secondary" className="text-xs">
               {t.truncated}
             </Badge>
@@ -193,11 +150,11 @@ const App = () => {
               {t.rendered}
             </TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="raw" className="mt-4">
             <ScrollArea className="h-64 w-full rounded border">
               <pre className="p-4 text-sm">
-                <code>{fileContent.content}</code>
+                <code>{content}</code>
               </pre>
             </ScrollArea>
           </TabsContent>
