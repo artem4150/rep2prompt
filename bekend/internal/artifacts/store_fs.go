@@ -245,7 +245,7 @@ func (s *FSStore) updateManifest(exportID string, meta ArtifactMeta) error {
 	if !replaced {
 		mf.Files = append(mf.Files, meta)
 	}
-	// Обновим timestamps (GeneratedAt как "последнее изменение манифеста")
+	// О бновим timestamps (GeneratedAt как "последнее изменение манифеста")
 	now := time.Now().UTC()
 	mf.GeneratedAt = now
 	if mf.TTLHours <= 0 {
