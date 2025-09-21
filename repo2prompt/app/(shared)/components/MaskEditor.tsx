@@ -1,42 +1,194 @@
 'use client';
-import { Button, Input, Chip } from '@heroui/react';
+
 import { useState } from 'react';
+import { Button, Chip, Input, Card, CardBody, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
+import { X } from 'lucide-react';
+import { useI18n } from '@/i18n/provider';
 
+export type MaskPreset = {
+  key: string;
+  label: string;
+  include: string[];
+  exclude: string[];
+};
 
-export default function MaskEditor({ includeGlobs, excludeGlobs, onChange }:{ includeGlobs:string[]; excludeGlobs:string[]; onChange:(i:string[], e:string[])=>void }){
-const [inc, setInc] = useState('');
-const [exc, setExc] = useState('');
-const add = (val:string, type:'inc'|'exc') => {
-const v = val.trim(); if(!v) return;
-if(type==='inc') onChange([...new Set([...includeGlobs, v])], excludeGlobs);
-else onChange(includeGlobs, [...new Set([...excludeGlobs, v])]);
+type MaskEditorProps = {
+  includeGlobs: string[];
+  excludeGlobs: string[];
+  presets: MaskPreset[];
+  onChangeInclude: (patterns: string[]) => void;
+  onChangeExclude: (patterns: string[]) => void;
+  onResetExclude?: () => void;
 };
-const remove = (val:string, type:'inc'|'exc') => {
-if(type==='inc') onChange(includeGlobs.filter(x=>x!==val), excludeGlobs);
-else onChange(includeGlobs, excludeGlobs.filter(x=>x!==val));
-};
-return (
-<div className="space-y-3">
-<div>
-<div className="mb-2 font-medium">Include</div>
-<div className="flex gap-2">
-<Input value={inc} onChange={e=>setInc(e.target.value)} placeholder="пример: src/**/*" />
-<Button onPress={()=>{add(inc,'inc'); setInc('');}}>Добавить</Button>
-</div>
-<div className="flex gap-2 flex-wrap mt-2">
-{includeGlobs.map(x=> <Chip key={x} onClose={()=>remove(x,'inc')}>{x}</Chip>)}
-</div>
-</div>
-<div>
-<div className="mb-2 font-medium">Exclude</div>
-<div className="flex gap-2">
-<Input value={exc} onChange={e=>setExc(e.target.value)} placeholder="пример: **/*.test.tsx" />
-<Button onPress={()=>{add(exc,'exc'); setExc('');}}>Добавить</Button>
-</div>
-<div className="flex gap-2 flex-wrap mt-2">
-{excludeGlobs.map(x=> <Chip key={x} onClose={()=>remove(x,'exc')}>{x}</Chip>)}
-</div>
-</div>
-</div>
-);
+
+function addPattern(list: string[], pattern: string) {
+  const trimmed = pattern.trim();
+  if (!trimmed) return list;
+  if (list.includes(trimmed)) return list;
+  return [...list, trimmed];
 }
+
+export function MaskEditor({
+  includeGlobs,
+  excludeGlobs,
+  presets,
+  onChangeInclude,
+  onChangeExclude,
+  onResetExclude,
+}: MaskEditorProps) {
+  const { t } = useI18n();
+  const [includeInput, setIncludeInput] = useState('');
+  const [excludeInput, setExcludeInput] = useState('');
+
+  return (
+    <Card shadow="sm">
+      <CardBody className="space-y-5">
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold uppercase text-default-500">
+              {t('select.masks.include')}
+            </h3>
+            <Dropdown>
+              <DropdownTrigger>
+                <Button size="sm" variant="flat">
+                  {t('select.masks.presets')}
+                </Button>
+              </DropdownTrigger>
+              <DropdownMenu
+                aria-label="Mask presets"
+                onAction={(key) => {
+                  const preset = presets.find((item) => item.key === key);
+                  if (!preset) return;
+                  onChangeInclude(preset.include);
+                  onChangeExclude(preset.exclude);
+                }}
+              >
+                {presets.map((preset) => (
+                  <DropdownItem key={preset.key}>{preset.label}</DropdownItem>
+                ))}
+              </DropdownMenu>
+            </Dropdown>
+          </div>
+          <Input
+            placeholder={t('select.masks.placeholder')}
+            value={includeInput}
+            size="sm"
+            onChange={(event) => setIncludeInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                const next = addPattern(includeGlobs, includeInput);
+                if (next !== includeGlobs) onChangeInclude(next);
+                setIncludeInput('');
+              }
+            }}
+            endContent={
+              <Button
+                size="sm"
+                variant="light"
+                onPress={() => {
+                  const next = addPattern(includeGlobs, includeInput);
+                  if (next !== includeGlobs) onChangeInclude(next);
+                  setIncludeInput('');
+                }}
+              >
+                {t('select.masks.add')}
+              </Button>
+            }
+          />
+          <div className="flex flex-wrap gap-2">
+            {includeGlobs.length === 0 && (
+              <span className="text-xs text-default-400">{t('select.masks.empty')}</span>
+            )}
+            {includeGlobs.map((pattern) => (
+              <Chip key={pattern} variant="flat" className="gap-1 pr-1">
+                <span>{pattern}</span>
+                <Button
+                  isIconOnly
+                  size="sm"
+                  radius="full"
+                  variant="light"
+                  aria-label={t('select.masks.remove', { pattern })}
+                  onPress={() => {
+                    onChangeInclude(includeGlobs.filter((item) => item !== pattern));
+                  }}
+                >
+                  <X size={14} />
+                </Button>
+              </Chip>
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold uppercase text-default-500">
+              {t('select.masks.exclude')}
+            </h3>
+            <Button
+              size="sm"
+              variant="light"
+              onPress={() => {
+                setExcludeInput('');
+                onResetExclude?.();
+              }}
+            >
+              {t('select.masks.reset')}
+            </Button>
+          </div>
+          <Input
+            placeholder={t('select.masks.placeholder')}
+            value={excludeInput}
+            size="sm"
+            onChange={(event) => setExcludeInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                const next = addPattern(excludeGlobs, excludeInput);
+                if (next !== excludeGlobs) onChangeExclude(next);
+                setExcludeInput('');
+              }
+            }}
+            endContent={
+              <Button
+                size="sm"
+                variant="light"
+                onPress={() => {
+                  const next = addPattern(excludeGlobs, excludeInput);
+                  if (next !== excludeGlobs) onChangeExclude(next);
+                  setExcludeInput('');
+                }}
+              >
+                {t('select.masks.add')}
+              </Button>
+            }
+          />
+          <div className="flex flex-wrap gap-2">
+            {excludeGlobs.length === 0 && (
+              <span className="text-xs text-default-400">{t('select.masks.empty')}</span>
+            )}
+            {excludeGlobs.map((pattern) => (
+              <Chip key={pattern} variant="flat" color="danger" className="gap-1 pr-1">
+                <span>{pattern}</span>
+                <Button
+                  isIconOnly
+                  size="sm"
+                  radius="full"
+                  variant="light"
+                  aria-label={t('select.masks.remove', { pattern })}
+                  onPress={() => {
+                    onChangeExclude(excludeGlobs.filter((item) => item !== pattern));
+                  }}
+                >
+                  <X size={14} />
+                </Button>
+              </Chip>
+            ))}
+          </div>
+        </section>
+      </CardBody>
+    </Card>
+  );
+}
+
+export default MaskEditor;

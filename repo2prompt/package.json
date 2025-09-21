@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest --environment happy-dom",
+    "test": "vitest run tests/unit",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -22,7 +22,9 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "zod": "^4.1.9",
-    "zustand": "^5.0.8"
+    "zustand": "^5.0.8",
+    "uuid": "^11.0.3",
+    "clsx": "^2.1.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

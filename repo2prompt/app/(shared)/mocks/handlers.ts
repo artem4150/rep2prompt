@@ -3,22 +3,35 @@ import { http, HttpResponse, delay } from 'msw';
 const API = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
 const sampleTree = {
-  items: [
-    { path: 'README.md', type: 'file', size: 1200 },
-    { path: 'src/index.ts', type: 'file', size: 3200 },
-    { path: 'src/components/App.tsx', type: 'file', size: 4200 },
-    { path: 'src/components', type: 'dir', size: 0 },
-    { path: 'package.json', type: 'file', size: 1800 }
-  ]
+  items: (() => {
+    const base = [
+      { path: 'README.md', type: 'file', size: 2200 },
+      { path: 'docs', type: 'dir', size: 0 },
+      { path: 'docs/overview.md', type: 'file', size: 3200 },
+      { path: 'package.json', type: 'file', size: 1800 },
+      { path: 'src', type: 'dir', size: 0 },
+      { path: 'src/components', type: 'dir', size: 0 },
+      { path: 'src/components/App.tsx', type: 'file', size: 4200 },
+      { path: 'src/lib', type: 'dir', size: 0 },
+      { path: 'src/lib/tokenizer.ts', type: 'file', size: 5800 },
+      { path: 'public', type: 'dir', size: 0 },
+      { path: 'public/logo.png', type: 'file', size: 1_200_000, lfs: true },
+    ];
+    for (let i = 0; i < 40; i += 1) {
+      base.push({ path: `src/pages/page-${i}.tsx`, type: 'file', size: 1500 + i * 32 });
+    }
+    return base;
+  })(),
 };
 
 export const handlers = [
   http.post(`${API}/resolve`, async ({ request }) => {
-    const { url } = (await request.json()) as any;
-    if (!url || !String(url).includes('github.com')) {
+    const body = (await request.json().catch(() => null)) as { url?: string } | null;
+    const url = body?.url ?? '';
+    if (!url || !url.includes('github.com')) {
       return HttpResponse.json({ code: 'bad_request', message: 'bad' }, { status: 400 });
     }
-    const [, after] = String(url).split('github.com/');
+    const [, after] = url.split('github.com/');
     if (!after) return HttpResponse.json({ code: 'bad_request', message: 'bad' }, { status: 400 });
     const [owner, repo] = after.split('/');
     return HttpResponse.json({ owner, repo, defaultRef: 'main', refs: ['main', 'dev', 'v1.0.0'] });
@@ -30,8 +43,9 @@ export const handlers = [
   }),
 
   http.post(`${API}/preview`, async ({ request }) => {
-    const { path } = (await request.json()) as any;
-    if (path?.endsWith('.png')) {
+    const body = (await request.json().catch(() => null)) as { path?: string } | null;
+    const path = body?.path ?? '';
+    if (path.endsWith('.png')) {
       return HttpResponse.json({ code: 'unsupported_media_type', message: 'bin' }, { status: 415 });
     }
     return HttpResponse.json({ content: `# Preview of ${path}\n\nSample content...`, truncated: false });
@@ -47,6 +61,11 @@ export const handlers = [
     if (t < 2000) return HttpResponse.json({ state: 'queued', progress: 5 });
     if (t < 4000) return HttpResponse.json({ state: 'running', progress: 60 });
     return HttpResponse.json({ state: 'done', progress: 100, exportId: 'exp-777' });
+  }),
+
+  http.post(`${API}/jobs/:id/cancel`, async () => {
+    await delay(200);
+    return HttpResponse.json({ state: 'canceled' });
   }),
 
   http.get(`${API}/artifacts/:exportId`, async ({ params }) => {
