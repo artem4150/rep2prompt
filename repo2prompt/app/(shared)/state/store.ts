@@ -21,6 +21,7 @@ export type Store = SelectionState & {
   tree: TreeItem[];
   includeGlobs: string[];
   excludeGlobs: string[];
+  filtersEnabled: boolean;
   profile: ExportProfile;
   format: ExportFormat;
   secretScan: boolean;
@@ -37,6 +38,7 @@ export type Store = SelectionState & {
   setTree: (items: TreeItem[]) => void;
   resetRepo: () => void;
   setMasks: (include: string[], exclude: string[]) => void;
+  setFiltersEnabled: (enabled: boolean) => void;
   setSelectedPaths: (paths: string[]) => void;
   clearSelection: () => void;
   setAutoExcludedPaths: (paths: string[]) => void;
@@ -59,6 +61,7 @@ const initialState = {
   tree: [] as TreeItem[],
   includeGlobs: [] as string[],
   excludeGlobs: ['**/*.test.*', '**/.git/**', 'node_modules/**'] as string[],
+  filtersEnabled: true,
   profile: 'short' as ExportProfile,
   format: 'md' as ExportFormat,
   secretScan: false,
@@ -91,6 +94,7 @@ export const useStore = create<Store>()(
           autoExcludedPaths: [],
         }),
       setMasks: (include, exclude) => set({ includeGlobs: include, excludeGlobs: exclude }),
+      setFiltersEnabled: (enabled) => set({ filtersEnabled: enabled }),
       setSelectedPaths: (paths) => {
         const unique = Array.from(new Set(paths.filter(Boolean)));
         set({ selectedPaths: unique });
@@ -105,6 +109,7 @@ export const useStore = create<Store>()(
         repoUrl: state.repoUrl,
         includeGlobs: state.includeGlobs,
         excludeGlobs: state.excludeGlobs,
+        filtersEnabled: state.filtersEnabled,
         profile: state.profile,
         format: state.format,
         tokenModel: state.tokenModel,

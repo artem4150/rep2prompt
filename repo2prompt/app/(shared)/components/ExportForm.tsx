@@ -36,9 +36,12 @@ export function ExportForm({ stats }: ExportFormProps) {
 
   const includeFinal = useMemo(() => {
     const manual = store.selectedPaths;
+    if (!store.filtersEnabled) {
+      return Array.from(new Set(manual));
+    }
     const unique = new Set([...store.includeGlobs, ...manual]);
     return Array.from(unique);
-  }, [store.includeGlobs, store.selectedPaths]);
+  }, [store.filtersEnabled, store.includeGlobs, store.selectedPaths]);
 
   async function submit() {
     const parsed = schema.safeParse({
@@ -67,7 +70,7 @@ export function ExportForm({ stats }: ExportFormProps) {
         format: parsed.data.format,
         profile: parsed.data.profile,
         includeGlobs: includeFinal,
-        excludeGlobs: store.excludeGlobs,
+        excludeGlobs: store.filtersEnabled ? store.excludeGlobs : [],
         secretScan: parsed.data.secretScan,
         secretStrategy: parsed.data.secretStrategy,
         tokenModel: parsed.data.tokenModel,

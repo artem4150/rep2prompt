@@ -90,6 +90,10 @@
       }
     },
     "masks": {
+      "title": "File filters",
+      "enable": "Enable filters",
+      "disable": "Disable filters",
+      "disabled": "Filters are disabled — only manually selected files are included.",
       "include": "Include masks",
       "exclude": "Exclude masks",
       "add": "Add",

@@ -24,6 +24,7 @@ export default function ExportPage() {
   const selectedPaths = useStore((state) => state.selectedPaths);
   const includeGlobs = useStore((state) => state.includeGlobs);
   const excludeGlobs = useStore((state) => state.excludeGlobs);
+  const filtersEnabled = useStore((state) => state.filtersEnabled);
   const autoExcludedPaths = useStore((state) => state.autoExcludedPaths);
 
   useEffect(() => {
@@ -55,8 +56,9 @@ export default function ExportPage() {
         includeGlobs,
         excludeGlobs,
         autoExcludedPaths,
+        filtersEnabled,
       }),
-    [items, selectedPaths, includeGlobs, excludeGlobs, autoExcludedPaths]
+    [items, selectedPaths, includeGlobs, excludeGlobs, autoExcludedPaths, filtersEnabled]
   );
 
   if (query.isLoading && items.length === 0) {
