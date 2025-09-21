@@ -1,0 +1,13 @@
+{
+"landing": { "title": "Repo2Prompt", "cta": "Продолжить", "input": { "placeholder": "Вставьте ссылку на GitHub" } },
+"errors": {
+"bad_request": "Проверьте введённые данные",
+"not_found": "Репозиторий не найден",
+"rate_limited": "Лимит GitHub. Повторите позже",
+"upstream_error": "Ошибка GitHub/сети",
+"too_large": "Слишком большой экспорт (лимит 500 МБ)",
+"unauthorized": "Нужна авторизация GitHub",
+"unsupported_media_type": "Предпросмотр недоступен (бинарный/слишком большой файл)",
+"generic": "Что-то пошло не так"
+}
+}
