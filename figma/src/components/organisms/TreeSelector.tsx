@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../../App';
 import { MaskEditor } from '../molecules/MaskEditor';
 import { FilePreview } from '../molecules/FilePreview';
@@ -9,6 +9,8 @@ import { Badge } from '../ui/badge';
 import { ScrollArea } from '../ui/scroll-area';
 import { Separator } from '../ui/separator';
 import { Search, Folder, File, FolderOpen, RefreshCw } from 'lucide-react';
+import { formatBytes } from '../../lib/utils';
+import { TreeItem } from '../../lib/types';
 
 interface TreeSelectorProps {
   selectedFiles: string[];
@@ -26,10 +28,10 @@ interface FileNode {
 }
 
 export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSelectionChange }) => {
-  const { language } = useAppContext();
+  const { language, treeItems, treeLoading, repoData, loadTree } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['src', 'components']));
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   const texts = {
     ru: {
@@ -38,6 +40,8 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
       selectAll: 'Выбрать всё',
       noMatches: 'Нет совпадений по маскам',
       showingFirst: 'Показаны первые 1000 элементов, сузьте маски',
+      empty: 'Дерево пустое. Возможно, маски исключили все файлы.',
+      refresh: 'Обновить',
     },
     en: {
       searchPlaceholder: 'Search by path...',
@@ -45,73 +49,159 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
       selectAll: 'Select all',
       noMatches: 'No files match your masks',
       showingFirst: 'Showing first 1000 items, narrow down masks',
+      empty: 'Tree is empty. Your filters may exclude all files.',
+      refresh: 'Refresh',
     },
   };
 
   const t = texts[language];
 
-  // Mock file tree data
-  const mockFileTree: FileNode[] = [
-    {
-      name: 'src',
-      path: 'src',
-      type: 'folder',
-      children: [
-        {
-          name: 'components',
-          path: 'src/components',
-          type: 'folder',
-          children: [
-            { name: 'Button.tsx', path: 'src/components/Button.tsx', type: 'file', size: '2.1 KB' },
-            { name: 'Modal.tsx', path: 'src/components/Modal.tsx', type: 'file', size: '4.3 KB' },
-            { name: 'Form.tsx', path: 'src/components/Form.tsx', type: 'file', size: '8.2 KB' },
-          ],
-        },
-        {
-          name: 'utils',
-          path: 'src/utils',
-          type: 'folder',
-          children: [
-            { name: 'helpers.ts', path: 'src/utils/helpers.ts', type: 'file', size: '1.8 KB' },
-            { name: 'api.ts', path: 'src/utils/api.ts', type: 'file', size: '3.4 KB' },
-          ],
-        },
-        { name: 'index.tsx', path: 'src/index.tsx', type: 'file', size: '1.2 KB' },
-        { name: 'App.tsx', path: 'src/App.tsx', type: 'file', size: '5.7 KB' },
-      ],
-    },
-    {
-      name: 'public',
-      path: 'public',
-      type: 'folder',
-      children: [
-        { name: 'favicon.ico', path: 'public/favicon.ico', type: 'file', size: '15 KB' },
-        { name: 'logo.svg', path: 'public/logo.svg', type: 'file', size: '2.8 KB' },
-      ],
-    },
-    {
-      name: 'docs',
-      path: 'docs',
-      type: 'folder',
-      children: [
-        { name: 'README.md', path: 'docs/README.md', type: 'file', size: '12 KB' },
-        { name: 'CHANGELOG.md', path: 'docs/CHANGELOG.md', type: 'file', size: '8.5 KB' },
-      ],
-    },
-    { name: 'package.json', path: 'package.json', type: 'file', size: '2.3 KB' },
-    { name: 'tsconfig.json', path: 'tsconfig.json', type: 'file', size: '0.8 KB' },
-    { name: 'README.md', path: 'README.md', type: 'file', size: '4.2 KB' },
-    { name: 'large-dataset.csv', path: 'large-dataset.csv', type: 'file', size: '2.1 MB', isLFS: true },
-  ];
+  const tree = useMemo(() => {
+    if (!treeItems.length) {
+      return [] as FileNode[];
+    }
+
+    const dirMap = new Map<string, FileNode>();
+    const roots: FileNode[] = [];
+
+    const ensureDir = (path: string): FileNode => {
+      let node = dirMap.get(path);
+      if (!node) {
+        const parts = path.split('/');
+        const name = parts[parts.length - 1];
+        node = { name, path, type: 'folder', children: [] };
+        dirMap.set(path, node);
+        const parentPath = parts.slice(0, -1).join('/');
+        if (parentPath) {
+          const parent = ensureDir(parentPath);
+          parent.children = parent.children ?? [];
+          if (!parent.children.find(child => child.path === path)) {
+            parent.children.push(node);
+          }
+        } else if (!roots.find(child => child.path === path)) {
+          roots.push(node);
+        }
+      }
+      return node;
+    };
+
+    const addToParent = (node: FileNode, parentPath: string) => {
+      if (parentPath) {
+        const parent = ensureDir(parentPath);
+        parent.children = parent.children ?? [];
+        if (!parent.children.find(child => child.path === node.path)) {
+          parent.children.push(node);
+        }
+      } else if (!roots.find(child => child.path === node.path)) {
+        roots.push(node);
+      }
+    };
+
+    treeItems.forEach((item: TreeItem) => {
+      const parts = item.path.split('/');
+      const name = parts[parts.length - 1];
+      const parentPath = parts.slice(0, -1).join('/');
+
+      if (item.type === 'dir') {
+        const dir = ensureDir(item.path);
+        dir.name = name;
+        dir.isSubmodule = item.submodule;
+        addToParent(dir, parentPath);
+        return;
+      }
+
+      const fileNode: FileNode = {
+        name,
+        path: item.path,
+        type: 'file',
+        size: formatBytes(item.size),
+        isLFS: item.lfs,
+      };
+      addToParent(fileNode, parentPath);
+    });
+
+    const sortNodes = (nodes: FileNode[]) => {
+      nodes.sort((a, b) => {
+        if (a.type === b.type) {
+          return a.name.localeCompare(b.name);
+        }
+        return a.type === 'folder' ? -1 : 1;
+      });
+      nodes.forEach(node => {
+        if (node.children) {
+          sortNodes(node.children);
+        }
+      });
+    };
+
+    sortNodes(roots);
+    return roots;
+  }, [treeItems]);
+
+  useEffect(() => {
+    if (!treeItems.length) {
+      setExpandedFolders(new Set());
+      setSelectedFile(null);
+      return;
+    }
+
+    setExpandedFolders(prev => {
+      if (prev.size > 0) {
+        return prev;
+      }
+      const topLevel = new Set<string>();
+      treeItems.forEach(item => {
+        if (item.type === 'dir' && !item.path.includes('/')) {
+          topLevel.add(item.path);
+        }
+      });
+      return topLevel.size > 0 ? topLevel : prev;
+    });
+
+    if (!selectedFile) {
+      const firstFile = treeItems.find(item => item.type === 'file');
+      if (firstFile) {
+        setSelectedFile(firstFile.path);
+      }
+    }
+  }, [treeItems, selectedFile]);
+
+  const allFilePaths = useMemo(
+    () => treeItems.filter(item => item.type === 'file').map(item => item.path),
+    [treeItems]
+  );
+
+  const filteredTree = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return tree;
+    }
+    const term = searchTerm.trim().toLowerCase();
+
+    const filterNodes = (nodes: FileNode[]): FileNode[] =>
+      nodes
+        .map(node => {
+          if (node.type === 'folder') {
+            const children = filterNodes(node.children ?? []);
+            if (node.path.toLowerCase().includes(term) || children.length > 0) {
+              return { ...node, children };
+            }
+            return null;
+          }
+          return node.path.toLowerCase().includes(term) ? node : null;
+        })
+        .filter((node): node is FileNode => node !== null);
+
+    return filterNodes(tree);
+  }, [tree, searchTerm]);
 
   const toggleFolder = (path: string) => {
-    const newExpanded = new Set(expandedFolders);
-    if (newExpanded.has(path)) {
-      newExpanded.delete(path);
+    const updated = new Set(expandedFolders);
+    if (updated.has(path)) {
+      updated.delete(path);
     } else {
-      newExpanded.add(path);
+      updated.add(path);
     }
-    setExpandedFolders(newExpanded);
+    setExpandedFolders(updated);
   };
 
   const toggleFileSelection = (path: string) => {
@@ -119,6 +209,19 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
       ? selectedFiles.filter(f => f !== path)
       : [...selectedFiles, path];
     onSelectionChange(newSelection);
+  };
+
+  const handleRefresh = () => {
+    if (!repoData) {
+      return;
+    }
+    loadTree(repoData.owner, repoData.repo, repoData.currentRef, true).catch(() => {
+      /* handled via treeError */
+    });
+  };
+
+  const handleSelectAll = () => {
+    onSelectionChange(allFilePaths);
   };
 
   const renderFileNode = (node: FileNode, level: number = 0): React.ReactNode => {
@@ -129,12 +232,12 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
     if (node.type === 'folder') {
       return (
         <div key={node.path}>
-          <div 
+          <div
             className="flex items-center gap-2 p-2 hover:bg-muted/50 cursor-pointer rounded-md"
             style={{ paddingLeft }}
             onClick={() => toggleFolder(node.path)}
           >
-            <Checkbox 
+            <Checkbox
               checked={isSelected}
               onCheckedChange={() => toggleFileSelection(node.path)}
               onClick={(e) => e.stopPropagation()}
@@ -145,6 +248,11 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
               <Folder className="w-4 h-4 text-blue-500" />
             )}
             <span className="font-medium">{node.name}</span>
+            {node.isSubmodule && (
+              <Badge variant="outline" className="text-xs">
+                Submodule
+              </Badge>
+            )}
           </div>
           {isExpanded && node.children && (
             <div>
@@ -156,7 +264,7 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
     }
 
     return (
-      <div 
+      <div
         key={node.path}
         className={`flex items-center justify-between gap-2 p-2 hover:bg-muted/50 cursor-pointer rounded-md ${
           selectedFile === node.path ? 'bg-primary/10' : ''
@@ -165,7 +273,7 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
         onClick={() => setSelectedFile(node.path)}
       >
         <div className="flex items-center gap-2 flex-1">
-          <Checkbox 
+          <Checkbox
             checked={isSelected}
             onCheckedChange={() => toggleFileSelection(node.path)}
             onClick={(e) => e.stopPropagation()}
@@ -173,10 +281,9 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
           <File className="w-4 h-4 text-muted-foreground" />
           <span>{node.name}</span>
           {node.isLFS && (
-            <Badge variant="secondary" className="text-xs">LFS</Badge>
-          )}
-          {node.isSubmodule && (
-            <Badge variant="outline" className="text-xs">Submodule</Badge>
+            <Badge variant="secondary" className="text-xs">
+              LFS
+            </Badge>
           )}
         </div>
         <span className="text-xs text-muted-foreground">{node.size}</span>
@@ -186,7 +293,6 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
 
   return (
     <div className="grid lg:grid-cols-2 gap-6">
-      {/* Left Panel - File Tree */}
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -198,19 +304,31 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
               className="pl-10"
             />
           </div>
-          <Button variant="outline" size="sm" onClick={() => onSelectionChange([])}>
+          <Button variant="outline" size="sm" onClick={handleSelectAll} disabled={!allFilePaths.length}>
+            {t.selectAll}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => onSelectionChange([])} disabled={!selectedFiles.length}>
             {t.clearAll}
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={treeLoading}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${treeLoading ? 'animate-spin' : ''}`} />
+            {t.refresh}
           </Button>
         </div>
 
         <ScrollArea className="h-96 border rounded-lg p-4">
           <div className="space-y-1">
-            {mockFileTree.map(node => renderFileNode(node))}
+            {filteredTree.length === 0 && !treeLoading ? (
+              <div className="text-sm text-muted-foreground py-8 text-center">
+                {searchTerm ? t.noMatches : t.empty}
+              </div>
+            ) : (
+              filteredTree.map(node => renderFileNode(node))
+            )}
           </div>
         </ScrollArea>
       </div>
 
-      {/* Right Panel - Masks and Preview */}
       <div className="space-y-6">
         <MaskEditor />
         <Separator />

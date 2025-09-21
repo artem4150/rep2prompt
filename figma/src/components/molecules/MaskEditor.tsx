@@ -8,9 +8,13 @@ import { Label } from '../ui/label';
 import { Plus, X, Filter } from 'lucide-react';
 
 export const MaskEditor: React.FC = () => {
-  const { language } = useAppContext();
-  const [includeMasks, setIncludeMasks] = useState(['**/*.ts', '**/*.tsx', 'README.md']);
-  const [excludeMasks, setExcludeMasks] = useState(['node_modules/**', '.next/**', 'dist/**', 'coverage/**']);
+  const {
+    language,
+    includeMasks,
+    setIncludeMasks,
+    excludeMasks,
+    setExcludeMasks,
+  } = useAppContext();
   const [newInclude, setNewInclude] = useState('');
   const [newExclude, setNewExclude] = useState('');
 
