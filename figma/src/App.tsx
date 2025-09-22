@@ -23,6 +23,7 @@ interface AppContextType {
   selectedPaths: string[];
   includeMasks: string[];
   excludeMasks: string[];
+  filtersEnabled: boolean;
   currentJob: JobState | null;
   artifacts: ArtifactFile[];
   artifactsExpiresAt: string | null;
@@ -35,6 +36,7 @@ interface AppContextType {
   setSelectedPaths: React.Dispatch<React.SetStateAction<string[]>>;
   setIncludeMasks: React.Dispatch<React.SetStateAction<string[]>>;
   setExcludeMasks: React.Dispatch<React.SetStateAction<string[]>>;
+  setFiltersEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   setCurrentJob: React.Dispatch<React.SetStateAction<JobState | null>>;
   setArtifacts: React.Dispatch<React.SetStateAction<ArtifactFile[]>>;
   setArtifactsExpiresAt: React.Dispatch<React.SetStateAction<string | null>>;
@@ -63,6 +65,7 @@ export default function App() {
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
   const [includeMasks, setIncludeMasks] = useState<string[]>(['**/*.ts', '**/*.tsx', 'README.md']);
   const [excludeMasks, setExcludeMasks] = useState<string[]>(['node_modules/**', '.next/**', 'dist/**', 'coverage/**']);
+  const [filtersEnabled, setFiltersEnabled] = useState<boolean>(true);
   const [currentJob, setCurrentJob] = useState<JobState | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactFile[]>([]);
   const [artifactsExpiresAt, setArtifactsExpiresAt] = useState<string | null>(null);
@@ -102,6 +105,7 @@ export default function App() {
       selectedPaths,
       includeMasks,
       excludeMasks,
+      filtersEnabled,
       currentJob,
       artifacts,
       artifactsExpiresAt,
@@ -114,6 +118,7 @@ export default function App() {
       setSelectedPaths,
       setIncludeMasks,
       setExcludeMasks,
+      setFiltersEnabled,
       setCurrentJob,
       setArtifacts,
       setArtifactsExpiresAt,
@@ -131,6 +136,7 @@ export default function App() {
       selectedPaths,
       includeMasks,
       excludeMasks,
+      filtersEnabled,
       currentJob,
       artifacts,
       artifactsExpiresAt,
