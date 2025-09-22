@@ -1,8 +1,8 @@
 package exporter
 
 import (
-	"archive/tar"   // читаем TAR
-	"bufio"         // построчное чтение
+	"archive/tar" // читаем TAR
+	"bufio"       // построчное чтение
 	"bytes"
 	"compress/gzip" // распаковываем .tar.gz
 	"fmt"
@@ -16,16 +16,16 @@ import (
 
 // TxtOptions — параметры экспорта TXT.
 type TxtOptions struct {
-	IncludeGlobs    []string          // маски include
-	ExcludeGlobs    []string          // маски exclude
-	StripFirstDir   bool              // срезать первый сегмент (у GitHub tar это repo-<sha>/...)
-	LineNumbers     bool              // печатать "N\tстрока"
-	HeaderTemplate  string            // заголовок перед каждым файлом: поддерживает {path} и {n}
-	MaxLinesPerFile int               // 0 = без обрезки; иначе ограничиваем строки на файл
-	MaxExportMB     int               // общий лимит выходного TXT (в мегабайтах); 0 = без лимита
-	SkipBinaries    bool              // пропускать «бинарные» файлы (эвристика)
-	SecretScan      bool              // включить сканирование (дефолт: true)
-	SecretStrategy  secrets.Strategy  // стратегия (дефолт: REDACTED)
+	IncludeGlobs    []string         // маски include
+	ExcludeGlobs    []string         // маски exclude
+	StripFirstDir   bool             // срезать первый сегмент (у GitHub tar это repo-<sha>/...)
+	LineNumbers     bool             // печатать "N\tстрока"
+	HeaderTemplate  string           // заголовок перед каждым файлом: поддерживает {path} и {n}
+	MaxLinesPerFile int              // 0 = без обрезки; иначе ограничиваем строки на файл
+	MaxExportMB     int              // общий лимит выходного TXT (в мегабайтах); 0 = без лимита
+	SkipBinaries    bool             // пропускать «бинарные» файлы (эвристика)
+	SecretScan      bool             // включить сканирование (дефолт: true)
+	SecretStrategy  secrets.Strategy // стратегия (дефолт: REDACTED)
 }
 
 // BuildTxtFromTarGz — конвертит tar.gz поток в «плоский» TXT.
@@ -39,13 +39,8 @@ func BuildTxtFromTarGz(src io.Reader, dst io.Writer, opts TxtOptions) error {
 	if opts.MaxLinesPerFile < 0 {
 		opts.MaxLinesPerFile = 0
 	}
-	// по умолчанию — включаем сканирование с REDACTED
-	doScan := true
-	if opts.SecretScan { // пользователь мог явно включить
-		doScan = true
-	} else if !opts.SecretScan { // бул по умолчанию = false → включим вручную
-		doScan = true
-	}
+	// Управление сканированием секретов: если опция включена — создаём сканер.
+	doScan := opts.SecretScan
 	strategy := opts.SecretStrategy
 	if strategy != secrets.StrategyRedacted &&
 		strategy != secrets.StrategyStrip &&

@@ -39,9 +39,9 @@ type Manifest struct {
 }
 
 type FSStore struct {
-	root     string       // корень, например ./data/artifacts
-	ttlHours int          // дефолтный TTL для новых manifest
-	mu       sync.Mutex   // защищает запись manifest
+	root     string     // корень, например ./data/artifacts
+	ttlHours int        // дефолтный TTL для новых manifest
+	mu       sync.Mutex // защищает запись manifest
 	reSafeID *regexp.Regexp
 }
 
@@ -79,6 +79,13 @@ func (aw *ArtifactWriter) Close() error {
 	}
 	aw.meta.Size = fi.Size()
 	return aw.store.updateManifest(aw.exportID, aw.meta)
+}
+
+// Meta возвращает актуальные метаданные артефакта.
+// Дополнительно Close() обновляет размер, поэтому вызывать Meta имеет смысл
+// после успешного закрытия writer.
+func (aw *ArtifactWriter) Meta() ArtifactMeta {
+	return aw.meta
 }
 
 // CreateArtifact создаёт файл <root>/<exportId>/<name> и вернёт writer + метаданные.
