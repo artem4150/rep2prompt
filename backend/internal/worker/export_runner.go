@@ -121,7 +121,12 @@ func NewRunner(d Deps) jobs.Runner {
 			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("cannot create artifact"))
 			return nil
 		}
-		defer aw.Close() // по Close() manifest.json обновится с size
+		closed := false
+		defer func() {
+			if !closed {
+				_ = aw.Close()
+			}
+		}() // по Close() manifest.json обновится с size
 
 		// 3) строим содержимое
 		d.Exports.SetProgress(p.ExportID, 45)
@@ -168,7 +173,7 @@ func NewRunner(d Deps) jobs.Runner {
 				Owner:           p.Owner,
 				Repo:            p.Repo,
 				Ref:             p.Ref,
-				Profile:         exporter.Profile(strings.Title(p.Profile)),
+				Profile:         promptPackProfile(p.Profile),
 				ModelID:         p.TokenModel,
 				IncludeGlobs:    p.IncludeGlobs,
 				ExcludeGlobs:    p.ExcludeGlobs,
@@ -190,6 +195,13 @@ func NewRunner(d Deps) jobs.Runner {
 				}
 			}
 		}
+
+		if err := aw.Close(); err != nil {
+			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("cannot finalize artifact"))
+			return nil
+		}
+		closed = true
+		meta = aw.Meta()
 
 		d.Exports.SetProgress(p.ExportID, 95)
 		d.Exports.AddArtifact(p.ExportID, store.ArtifactMeta{
@@ -213,4 +225,15 @@ func CalcIdemKey(owner, repo, ref, format, profile string, include, exclude []st
 		fmt.Sprintf("sec=%v,strat=%s,model=%s,ver=%s", secretScan, strategy, tokenModel, exporterVersion),
 	}, "|"))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func promptPackProfile(profile string) exporter.Profile {
+	switch strings.ToLower(profile) {
+	case "full":
+		return exporter.ProfileFull
+	case "rag":
+		return exporter.ProfileRAG
+	default:
+		return exporter.ProfileShort
+	}
 }
