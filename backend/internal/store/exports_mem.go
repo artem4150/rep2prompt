@@ -126,9 +126,8 @@ func (s *ExportsMem) UpdateStatus(id string, st jobs.Status, progress int, errTe
 		if progress >= 0 {
 			e.Progress = progress
 		}
-		if errText != nil {
-			e.ErrorText = errText
-		}
+		// обновляем текст ошибки: если передали nil — очищаем прошлое сообщение
+		e.ErrorText = errText
 		now := time.Now().UTC()
 		switch st {
 		case jobs.StatusRunning:
