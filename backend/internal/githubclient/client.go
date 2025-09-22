@@ -1,14 +1,14 @@
 package githubclient // тот же пакет, что и parse.go
 
 import (
-	"context"   // передача контекста (отмена, дедлайны) в HTTP-запросы
+	"context"       // передача контекста (отмена, дедлайны) в HTTP-запросы
 	"encoding/json" // декодирование JSON-ответов GitHub API
-	"errors"   // константные/обёрточные ошибки
-	"fmt"      // форматирование строк (Sprintf)
-	"io"       // чтение тела ответа (io.ReadAll)
-	"net/http" // HTTP-клиент, запросы/ответы
-	"strings"  // манипуляция строками (проверка/склейка путей)
-	"time"     // таймауты, тип Duration
+	"errors"        // константные/обёрточные ошибки
+	"fmt"           // форматирование строк (Sprintf)
+	"io"            // чтение тела ответа (io.ReadAll)
+	"net/http"      // HTTP-клиент, запросы/ответы
+	"strings"       // манипуляция строками (проверка/склейка путей)
+	"time"          // таймауты, тип Duration
 
 	"github.com/yourname/cleanhttp/internal/config" // импортируем Config из нашего проекта
 )
@@ -29,8 +29,8 @@ type Client struct {
 
 // Константные ошибки для семантики наверх (хендлеру легче мапить коды)
 var (
-	ErrNotFound   = errors.New("not_found")        // 404 от GitHub
-	ErrUpstream   = errors.New("upstream_error")   // 5xx от GitHub
+	ErrNotFound = errors.New("not_found")      // 404 от GitHub
+	ErrUpstream = errors.New("upstream_error") // 5xx от GitHub
 )
 
 // RateLimitedError — специальная ошибка, когда мы уткнулись в лимиты GitHub.
@@ -46,11 +46,12 @@ func (e *RateLimitedError) Error() string {
 
 // New создаёт клиент с дефолтным BaseURL и http.Client с таймаутом из cfg.
 func New(cfg config.Config) *Client {
-	// Формируем http.Client с полем Timeout — это общий таймаут всего запроса,
-	// дополнительно к нашему RequestTimeout на уровне мидлвары.
-	httpClient := &http.Client{
-		Timeout: cfg.RequestTimeout, // задаём общий таймаут HTTP-клиента
-	}
+	// Используем http.Client без глобального Timeout.
+	// Все ограничения по времени устанавливаются через context.WithTimeout
+	// в вызывающем коде (например, для tarball скачивания мы даём до 2 минут).
+	// Глобальный Timeout у http.Client прерывал длительные загрузки файлов и
+	// приводил к ошибке "network error; retry later" при экспорте больших репо.
+	httpClient := &http.Client{}
 	return &Client{
 		BaseURL: "https://api.github.com", // стандартный адрес GitHub REST API
 		Token:   cfg.GitHubToken,          // берём токен из конфига (может быть пустым)
@@ -62,7 +63,7 @@ func New(cfg config.Config) *Client {
 // ensureLeadingSlash — маленький helper: гарантирует, что path начинается с "/".
 func ensureLeadingSlash(path string) string {
 	if !strings.HasPrefix(path, "/") { // если нет ведущего слеша
-		return "/" + path              // добавляем
+		return "/" + path // добавляем
 	}
 	return path // уже есть — возвращаем как есть
 }
@@ -74,7 +75,7 @@ func (c *Client) GetJSON(ctx context.Context, path string, v any) (int, error) {
 
 	// Создаём новый запрос с контекстом — так мы сможем отменять его извне.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil) // метод GET, тела нет
-	if err != nil { // ошибка формирования запроса (почти не бывает)
+	if err != nil {                                                           // ошибка формирования запроса (почти не бывает)
 		return 0, err
 	}
 

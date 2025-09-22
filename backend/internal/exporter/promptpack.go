@@ -428,12 +428,14 @@ func (st *packState) renderSummary() {
 	fmt.Fprintln(sb, "- **Стек**: автоопределение по deps (см. DEPS)")
 	fmt.Fprintln(sb, "- **Точки входа**: эвристики по файлам (cmd/*/main.go, app/page.tsx, Program.cs)")
 	fmt.Fprintln(sb, "- **Запуск**: см. Dockerfile/docker-compose/README (эвристика)")
-	fmt.Fprintln(sb, "- **Ограничения**: бинарники и LFS могут быть пропущены в врезках\n")
+	fmt.Fprintln(sb, "- **Ограничения**: бинарники и LFS могут быть пропущены в врезках")
+	fmt.Fprintln(sb)
 }
 
 func (st *packState) renderTree(depth, limit int) {
 	var b = &st.treeMD
-	fmt.Fprintln(b, "## 02_TREE\n")
+	fmt.Fprintln(b, "## 02_TREE")
+	fmt.Fprintln(b)
 	fmt.Fprintln(b, "repo-root/")
 	renderDir(b, "repo-root", "", st.dirChildren, 0, depth, limit)
 	fmt.Fprintln(b)
@@ -441,7 +443,8 @@ func (st *packState) renderTree(depth, limit int) {
 
 func (st *packState) renderDeps() {
 	var b = &st.depsMD
-	fmt.Fprintln(b, "## 03_DEPS\n")
+	fmt.Fprintln(b, "## 03_DEPS")
+	fmt.Fprintln(b)
 	if len(st.deps) == 0 {
 		fmt.Fprintln(b, "_нет зависимостей или не обнаружены_")
 		return
@@ -473,7 +476,8 @@ func (st *packState) renderDeps() {
 
 func (st *packState) renderEnv() {
 	var b = &st.envMD
-	fmt.Fprintln(b, "## 04_ENV\n")
+	fmt.Fprintln(b, "## 04_ENV")
+	fmt.Fprintln(b)
 	if len(st.envMap) == 0 {
 		fmt.Fprintln(b, "_переменные окружения не обнаружены_")
 		return
@@ -500,12 +504,14 @@ func (st *packState) renderEnv() {
 
 func (st *packState) renderPrompts() {
 	var b = &st.prompts
-	fmt.Fprintln(b, "## 05_PROMPTS\n")
+	fmt.Fprintln(b, "## 05_PROMPTS")
+	fmt.Fprintln(b)
 	fmt.Fprintln(b, "- Обзор кода: «Объясни архитектуру, точки входа и риски. Начни с 3 bullets, затем детали по модулям.»")
 	fmt.Fprintln(b, "- Рефакторинг файла: «Вот контекст (ниже). Перепиши с учётом линтера и кодстайла, не меняя поведение.»")
 	fmt.Fprintln(b, "- Тесты: «Сгенерируй юнит-тесты для X с покрытием Y и примерами граничных случаев.»")
 	fmt.Fprintln(b, "- Миграции/деплой: «Обнови Dockerfile под актуальный LTS/Go 1.23. Объясни изменения.»")
-	fmt.Fprintln(b, "- Q&A: «Отвечай на вопросы по модулю X, цитируя пути и строки из врезок.»\n")
+	fmt.Fprintln(b, "- Q&A: «Отвечай на вопросы по модулю X, цитируя пути и строки из врезок.»")
+	fmt.Fprintln(b)
 }
 
 // ===== Врезки + чанкование по токенам =====
@@ -872,7 +878,11 @@ func writeZipEntry(zw *zip.Writer, name string, data []byte) error {
 	return err
 }
 
-func drain(r io.Reader, n int64) { if n > 0 { _, _ = io.CopyN(io.Discard, r, n) } }
+func drain(r io.Reader, n int64) {
+	if n > 0 {
+		_, _ = io.CopyN(io.Discard, r, n)
+	}
+}
 func drainN(r io.Reader, n int64) { drain(r, n) }
 
 // min64 — маленький помощник для int64.

@@ -11,6 +11,7 @@ import { Separator } from '../ui/separator';
 import { Search, Folder, File, FolderOpen, RefreshCw } from 'lucide-react';
 import { formatBytes } from '../../lib/utils';
 import { TreeItem } from '../../lib/types';
+import { collectFilePaths, createGlobMatcher, filterTreeByGlobs } from '../../lib/glob';
 
 interface TreeSelectorProps {
   selectedFiles: string[];
@@ -28,7 +29,16 @@ interface FileNode {
 }
 
 export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSelectionChange }) => {
-  const { language, treeItems, treeLoading, repoData, loadTree } = useAppContext();
+  const {
+    language,
+    treeItems,
+    treeLoading,
+    repoData,
+    loadTree,
+    includeMasks,
+    excludeMasks,
+    filtersEnabled,
+  } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -157,23 +167,83 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
       });
       return topLevel.size > 0 ? topLevel : prev;
     });
+  }, [treeItems]);
 
-    if (!selectedFile) {
-      const firstFile = treeItems.find(item => item.type === 'file');
-      if (firstFile) {
-        setSelectedFile(firstFile.path);
-      }
-    }
-  }, [treeItems, selectedFile]);
-
-  const allFilePaths = useMemo(
-    () => treeItems.filter(item => item.type === 'file').map(item => item.path),
-    [treeItems]
+  const matcher = useMemo(
+    () => (filtersEnabled ? createGlobMatcher(includeMasks, excludeMasks) : null),
+    [filtersEnabled, includeMasks, excludeMasks]
   );
+
+  const treeWithFilters = useMemo(() => {
+    if (!tree.length) {
+      return [] as FileNode[];
+    }
+    if (!filtersEnabled || !matcher) {
+      return tree;
+    }
+    return filterTreeByGlobs(tree, matcher);
+  }, [filtersEnabled, matcher, tree]);
+
+  const visibleFilePaths = useMemo(() => collectFilePaths(treeWithFilters), [treeWithFilters]);
+  const visibleFilePathSet = useMemo(() => new Set(visibleFilePaths), [visibleFilePaths]);
+
+  const folderDescendants = useMemo(() => {
+    const map = new Map<string, string[]>();
+    const compute = (node: FileNode): string[] => {
+      if (node.type === 'file') {
+        return [node.path];
+      }
+      if (map.has(node.path)) {
+        return map.get(node.path)!;
+      }
+      const aggregated: string[] = [];
+      (node.children ?? []).forEach(child => {
+        compute(child).forEach(path => aggregated.push(path));
+      });
+      map.set(node.path, aggregated);
+      return aggregated;
+    };
+    treeWithFilters.forEach(node => {
+      compute(node);
+    });
+    return map;
+  }, [treeWithFilters]);
+
+  const selectedSet = useMemo(() => new Set(selectedFiles), [selectedFiles]);
+
+  const folderSelectionState = useMemo(() => {
+    const map = new Map<string, { total: number; selected: number }>();
+    folderDescendants.forEach((files, folderPath) => {
+      const total = files.length;
+      const selectedCount = files.reduce((acc, filePath) => acc + (selectedSet.has(filePath) ? 1 : 0), 0);
+      map.set(folderPath, { total, selected: selectedCount });
+    });
+    return map;
+  }, [folderDescendants, selectedSet]);
+
+  useEffect(() => {
+    if (!selectedFiles.length) {
+      return;
+    }
+    const sanitized = selectedFiles.filter(path => visibleFilePathSet.has(path));
+    if (sanitized.length !== selectedFiles.length) {
+      onSelectionChange(sanitized);
+    }
+  }, [selectedFiles, visibleFilePathSet, onSelectionChange]);
+
+  useEffect(() => {
+    if (selectedFile && visibleFilePathSet.has(selectedFile)) {
+      return;
+    }
+    const fallback = visibleFilePaths[0] ?? null;
+    if (fallback !== selectedFile) {
+      setSelectedFile(fallback);
+    }
+  }, [selectedFile, visibleFilePathSet, visibleFilePaths]);
 
   const filteredTree = useMemo(() => {
     if (!searchTerm.trim()) {
-      return tree;
+      return treeWithFilters;
     }
     const term = searchTerm.trim().toLowerCase();
 
@@ -191,8 +261,8 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
         })
         .filter((node): node is FileNode => node !== null);
 
-    return filterNodes(tree);
-  }, [tree, searchTerm]);
+    return filterNodes(treeWithFilters);
+  }, [treeWithFilters, searchTerm]);
 
   const toggleFolder = (path: string) => {
     const updated = new Set(expandedFolders);
@@ -205,10 +275,28 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
   };
 
   const toggleFileSelection = (path: string) => {
-    const newSelection = selectedFiles.includes(path)
-      ? selectedFiles.filter(f => f !== path)
-      : [...selectedFiles, path];
-    onSelectionChange(newSelection);
+    const next = new Set(selectedSet);
+    if (next.has(path)) {
+      next.delete(path);
+    } else {
+      next.add(path);
+    }
+    onSelectionChange(Array.from(next));
+  };
+
+  const toggleFolderSelection = (path: string) => {
+    const descendants = folderDescendants.get(path) ?? [];
+    if (!descendants.length) {
+      return;
+    }
+    const next = new Set(selectedSet);
+    const fullySelected = descendants.every(filePath => next.has(filePath));
+    if (fullySelected) {
+      descendants.forEach(filePath => next.delete(filePath));
+    } else {
+      descendants.forEach(filePath => next.add(filePath));
+    }
+    onSelectionChange(Array.from(next));
   };
 
   const handleRefresh = () => {
@@ -221,15 +309,25 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
   };
 
   const handleSelectAll = () => {
-    onSelectionChange(allFilePaths);
+    onSelectionChange(visibleFilePaths);
   };
 
   const renderFileNode = (node: FileNode, level: number = 0): React.ReactNode => {
-    const isSelected = selectedFiles.includes(node.path);
+    const isSelected = selectedSet.has(node.path);
     const isExpanded = expandedFolders.has(node.path);
     const paddingLeft = level * 20;
 
     if (node.type === 'folder') {
+      const folderInfo = folderSelectionState.get(node.path);
+      const totalDescendants = folderInfo?.total ?? 0;
+      const selectedDescendants = folderInfo?.selected ?? 0;
+      const checkboxState: boolean | 'indeterminate' = totalDescendants === 0
+        ? false
+        : selectedDescendants === totalDescendants
+        ? true
+        : selectedDescendants > 0
+        ? 'indeterminate'
+        : false;
       return (
         <div key={node.path}>
           <div
@@ -238,9 +336,10 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
             onClick={() => toggleFolder(node.path)}
           >
             <Checkbox
-              checked={isSelected}
-              onCheckedChange={() => toggleFileSelection(node.path)}
+              checked={checkboxState}
+              onCheckedChange={() => toggleFolderSelection(node.path)}
               onClick={(e) => e.stopPropagation()}
+              disabled={totalDescendants === 0}
             />
             {isExpanded ? (
               <FolderOpen className="w-4 h-4 text-blue-500" />
@@ -256,7 +355,7 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
           </div>
           {isExpanded && node.children && (
             <div>
-              {node.children.map(child => renderFileNode(child, level + 1))}
+              {node.children?.map(child => renderFileNode(child, level + 1))}
             </div>
           )}
         </div>
@@ -304,7 +403,7 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
               className="pl-10"
             />
           </div>
-          <Button variant="outline" size="sm" onClick={handleSelectAll} disabled={!allFilePaths.length}>
+          <Button variant="outline" size="sm" onClick={handleSelectAll} disabled={!visibleFilePaths.length}>
             {t.selectAll}
           </Button>
           <Button variant="outline" size="sm" onClick={() => onSelectionChange([])} disabled={!selectedFiles.length}>

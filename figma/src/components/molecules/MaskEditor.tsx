@@ -14,6 +14,8 @@ export const MaskEditor: React.FC = () => {
     setIncludeMasks,
     excludeMasks,
     setExcludeMasks,
+    filtersEnabled,
+    setFiltersEnabled,
   } = useAppContext();
   const [newInclude, setNewInclude] = useState('');
   const [newExclude, setNewExclude] = useState('');
@@ -29,6 +31,9 @@ export const MaskEditor: React.FC = () => {
       typescript: 'TypeScript',
       documentation: 'Документация',
       sources: 'Исходники',
+      disable: 'Отключить фильтры',
+      enable: 'Включить фильтры',
+      disabledHint: 'Фильтры отключены — экспорт и дерево показывают все файлы без ограничений.',
     },
     en: {
       title: 'File Filters',
@@ -40,10 +45,17 @@ export const MaskEditor: React.FC = () => {
       typescript: 'TypeScript',
       documentation: 'Documentation',
       sources: 'Sources',
+      disable: 'Disable filters',
+      enable: 'Enable filters',
+      disabledHint: 'Filters are disabled — the tree and export will include every file.',
     },
   };
 
   const t = texts[language];
+
+  const toggleFilters = () => {
+    setFiltersEnabled((prev) => !prev);
+  };
 
   const addIncludeMask = () => {
     if (newInclude.trim() && !includeMasks.includes(newInclude.trim())) {
@@ -87,34 +99,53 @@ export const MaskEditor: React.FC = () => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Filter className="w-5 h-5" />
-          {t.title}
-        </CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="w-5 h-5" />
+            {t.title}
+          </CardTitle>
+          <Button
+            variant={filtersEnabled ? 'outline' : 'default'}
+            size="sm"
+            onClick={toggleFilters}
+            className="gap-2"
+            type="button"
+          >
+            {filtersEnabled ? t.disable : t.enable}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        {!filtersEnabled && (
+          <div className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+            {t.disabledHint}
+          </div>
+        )}
         {/* Presets */}
         <div>
           <Label className="text-sm font-medium mb-2 block">{t.presets}</Label>
           <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => applyPreset('typescript')}
+              disabled={!filtersEnabled}
             >
               {t.typescript}
             </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => applyPreset('docs')}
+              disabled={!filtersEnabled}
             >
               {t.documentation}
             </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => applyPreset('sources')}
+              disabled={!filtersEnabled}
             >
               {t.sources}
             </Button>
@@ -133,8 +164,9 @@ export const MaskEditor: React.FC = () => {
                 value={newInclude}
                 onChange={(e) => setNewInclude(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && addIncludeMask()}
+                disabled={!filtersEnabled}
               />
-              <Button size="sm" onClick={addIncludeMask}>
+              <Button size="sm" onClick={addIncludeMask} disabled={!filtersEnabled}>
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
@@ -149,6 +181,7 @@ export const MaskEditor: React.FC = () => {
                   <button
                     onClick={() => removeIncludeMask(mask)}
                     className="ml-2 hover:text-green-900"
+                    disabled={!filtersEnabled}
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -170,8 +203,9 @@ export const MaskEditor: React.FC = () => {
                 value={newExclude}
                 onChange={(e) => setNewExclude(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && addExcludeMask()}
+                disabled={!filtersEnabled}
               />
-              <Button size="sm" onClick={addExcludeMask}>
+              <Button size="sm" onClick={addExcludeMask} disabled={!filtersEnabled}>
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
@@ -186,6 +220,7 @@ export const MaskEditor: React.FC = () => {
                   <button
                     onClick={() => removeExcludeMask(mask)}
                     className="ml-2 hover:text-red-900"
+                    disabled={!filtersEnabled}
                   >
                     <X className="w-3 h-3" />
                   </button>
