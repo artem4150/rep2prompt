@@ -40,6 +40,7 @@ type PromptPackOptions struct {
 	ExcludeGlobs     []string
 	MaxLinesPerFile  int
 	MaskSecrets      bool
+	StripFirstDir    bool // <— НОВОЕ: отрезать первый сегмент (owner-repo-<hash>/)
 
 	TokenBudget   int
 	ReservePct    int
@@ -162,7 +163,9 @@ func BuildPromptPackFromTarGz(src io.Reader, dst io.Writer, opts PromptPackOptio
 	tr := tar.NewReader(gz)
 
 	zw := zip.NewWriter(dst)
-	defer zw.Close()
+	// ВАЖНО: НЕ закрываем здесь; закроем во 2-м проходе,
+	// иначе архив получится пустым.
+	// defer zw.Close()  // <- удалено
 
 	// бюджет/оценка
 	reg := tokenest.DefaultRegistry()
@@ -200,6 +203,7 @@ func BuildPromptPackFromTarGz(src io.Reader, dst io.Writer, opts PromptPackOptio
 
 	// 1) скан
 	if err := st.scanTar(tr, opts); err != nil {
+		_ = zw.Close()
 		return err
 	}
 
@@ -239,11 +243,18 @@ func (e *NeedSecondPassError) Error() string { return "need_second_pass_for_exce
 func FillSecondPassExcerpts(src io.Reader, e *NeedSecondPassError) error {
 	gz, err := gzip.NewReader(src)
 	if err != nil {
+		_ = e.zw.Close()
 		return err
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
-	return e.state.renderExcerptsAndWriteZip(tr, e.zw)
+	err = e.state.renderExcerptsAndWriteZip(tr, e.zw)
+	// Закрываем zip ЗДЕСЬ, чтобы финализировать архив.
+	cerr := e.zw.Close()
+	if err != nil {
+		return err
+	}
+	return cerr
 }
 
 // ======== Первый проход: SCAN ========
@@ -306,12 +317,17 @@ func (st *packState) scanTar(tr *tar.Reader, opts PromptPackOptions) error {
 			continue
 		}
 
-		name := stripFirstDir(hdr.Name)
+		// нормализуем путь и (по необходимости) убираем лидер-каталог GitHub
+		name := hdr.Name
+		if opts.StripFirstDir {
+			name = stripFirstDir(name)
+		}
 		rel, err := filters.NormalizeRel(name)
 		if err != nil || rel == "" {
 			drain(tr, hdr.Size)
 			continue
 		}
+		// применяем include/exclude к относительному пути
 		if !filters.Match(rel, opts.IncludeGlobs, opts.ExcludeGlobs) {
 			drain(tr, hdr.Size)
 			continue

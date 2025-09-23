@@ -253,6 +253,7 @@ func NewRunner(d Deps) jobs.Runner {
 				ExcludeGlobs:    p.ExcludeGlobs,
 				MaxLinesPerFile: 0,
 				MaskSecrets:     p.SecretScan,
+				StripFirstDir:   true,
 			}
 			if err := exporter.BuildPromptPackFromTarGz(rc, aw, ppOpts); err != nil {
 				// Требуется второй проход
