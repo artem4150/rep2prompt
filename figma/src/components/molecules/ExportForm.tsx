@@ -17,6 +17,7 @@ export const ExportForm: React.FC = () => {
     language,
     setCurrentPage,
     repoData,
+    selectedPaths,
     includeMasks,
     excludeMasks,
     filtersEnabled,
@@ -100,14 +101,25 @@ export const ExportForm: React.FC = () => {
     }
     setSubmitting(true);
     setError(null);
+    const includeGlobs = (() => {
+      if (selectedPaths.length > 0) {
+        return selectedPaths;
+      }
+      if (filtersEnabled) {
+        return includeMasks;
+      }
+      return [];
+    })();
+    const excludeGlobs = filtersEnabled ? excludeMasks : [];
+
     createExport({
       owner: repoData.owner,
       repo: repoData.repo,
       ref: repoData.currentRef,
       format: format as 'zip' | 'md' | 'txt',
       profile,
-      includeGlobs: filtersEnabled ? includeMasks : [],
-      excludeGlobs: filtersEnabled ? excludeMasks : [],
+      includeGlobs,
+      excludeGlobs,
       secretScan,
       secretStrategy: 'mask',
       tokenModel: tokenModelId,
