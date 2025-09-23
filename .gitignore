@@ -1,0 +1,63 @@
+# --- OS мусор ---
+.DS_Store
+Thumbs.db
+
+# --- IDE/редакторы ---
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# --- Общие временные/логи/бэкапы ---
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*.orig
+*.bak
+
+# --- Архивы/бандлы ---
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# --- ENV (оставляем примеры) ---
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+figma/.env
+figma/.env.*
+!figma/.env.example
+
+# --- Go / backend ---
+backend/bin/
+*.test
+*.out
+coverage.out
+coverage.*
+coverage/
+*.cov
+
+# --- Рантайм-данные/артефакты (FSStore пишет в ./data/...) ---
+data/
+backend/data/
+artifacts/
+
+# --- Frontend (Vite / Node) ---
+figma/node_modules/
+figma/dist/
+figma/.vite/
+figma/.cache/
+figma/.eslintcache
+figma/npm-debug.log*
+figma/yarn-error.log*
+figma/pnpm-debug.log*
+
+# --- Ненужные системные файлы в подкаталогах ---
+**/.DS_Store
