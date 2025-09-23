@@ -58,6 +58,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state
       statusTimeout: 'Таймаут',
       job: 'Задача',
       canceledNotice: 'Задача была отменена.',
+      stagesTitle: 'Этапы выполнения',
     },
     en: {
       progress: 'Progress',
@@ -86,6 +87,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state
       statusTimeout: 'Timed out',
       job: 'Job',
       canceledNotice: 'The job was canceled.',
+      stagesTitle: 'Execution stages',
     },
   };
 
@@ -202,7 +204,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state
       {/* Stage List */}
       <Card>
         <CardHeader>
-          <CardTitle>Этапы выполнения</CardTitle>
+          <CardTitle>{t.stagesTitle}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">

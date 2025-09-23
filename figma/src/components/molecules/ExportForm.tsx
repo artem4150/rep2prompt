@@ -51,6 +51,10 @@ export const ExportForm: React.FC = () => {
       maxBinaryLabel: 'Макс. размер бинарных файлов (МБ)',
       createExport: 'Создать экспорт',
       advanced: 'Дополнительные настройки',
+      errors: {
+        noRepo: 'Сначала выберите репозиторий.',
+        generic: 'Не удалось создать экспорт.',
+      },
     },
     en: {
       title: 'Export Parameters',
@@ -69,12 +73,12 @@ export const ExportForm: React.FC = () => {
       maxBinaryLabel: 'Max Binary File Size (MB)',
       createExport: 'Create Export',
       advanced: 'Advanced Settings',
-      errorNoRepo: 'Сначала выберите репозиторий.',
-      errorGeneric: 'Не удалось создать экспорт.',
-      errorNoRepoEn: 'Please resolve a repository first.',
-      errorGenericEn: 'Failed to create export.',
+      errors: {
+        noRepo: 'Please resolve a repository first.',
+        generic: 'Failed to create export.',
+      },
     },
-  };
+  } as const;
 
   const t = texts[language];
 
@@ -91,7 +95,7 @@ export const ExportForm: React.FC = () => {
 
   const handleSubmit = () => {
     if (!repoData) {
-      setError(language === 'ru' ? texts.ru.errorNoRepo : texts.en.errorNoRepoEn);
+      setError(t.errors.noRepo);
       return;
     }
     setSubmitting(true);
@@ -117,11 +121,11 @@ export const ExportForm: React.FC = () => {
         setCurrentPage('jobs');
       })
       .catch((err) => {
-        if (err instanceof ApiError) {
+        if (err instanceof ApiError && err.message) {
           setError(err.message);
-        } else {
-          setError(language === 'ru' ? texts.ru.errorGeneric : texts.en.errorGenericEn);
+          return;
         }
+        setError(t.errors.generic);
       })
       .finally(() => setSubmitting(false));
   };
