@@ -4,6 +4,7 @@ import { ArtifactsList } from '../molecules/ArtifactsList';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
 import { CheckCircle2, Plus } from 'lucide-react';
+import { QuickTextExport } from '../molecules/QuickTextExport';
 
 export const Result: React.FC = () => {
   const {
@@ -61,6 +62,14 @@ export const Result: React.FC = () => {
     setCurrentPage('select');
   };
 
+  const quickArtifact = useMemo(() => {
+    const txtArtifact = artifacts.find((artifact) => artifact.kind === 'txt');
+    if (txtArtifact) {
+      return txtArtifact;
+    }
+    return artifacts.find((artifact) => artifact.kind === 'md');
+  }, [artifacts]);
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -80,7 +89,10 @@ export const Result: React.FC = () => {
           )}
 
           {artifacts.length > 0 ? (
-            <ArtifactsList artifacts={artifacts} />
+            <>
+              {quickArtifact && <QuickTextExport artifact={quickArtifact} />}
+              <ArtifactsList artifacts={artifacts} />
+            </>
           ) : (
             <Alert variant="destructive">
               <AlertDescription>{t.empty}</AlertDescription>
