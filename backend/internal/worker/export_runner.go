@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -17,22 +19,24 @@ import (
 	"github.com/yourname/cleanhttp/internal/store"
 )
 
-// ExportPayload — JSON/payload задачи (см. спецификацию шага 10.3).
+// ExportPayload — полезная нагрузка задачи экспорта.
 type ExportPayload struct {
 	ExportID        string
 	Owner           string
 	Repo            string
 	Ref             string
-	Format          string // "zip" | "txt" | "md"
-	Profile         string
+	Format          string // "zip" | "txt" | "md" (promptpack)
+	Profile         string // short | full | rag (для promptpack)
+	TokenModel      string // id модели токенов для budget/оценки
 	IncludeGlobs    []string
 	ExcludeGlobs    []string
-	SecretScan      bool
-	SecretStrategy  string
-	TokenModel      string // "openai:gpt-4o" и т.п.
 	MaxBinarySizeMB int
-	TTLHours        int
-	IdempotencyKey  string
+	SecretScan      bool
+
+	// поля, на которые ссылаются хэндлеры async-экспорта
+	SecretStrategy string
+	TTLHours       int
+	IdempotencyKey string
 }
 
 // Deps — зависимости раннера.
@@ -41,84 +45,34 @@ type Deps struct {
 	Store       *artifacts.FSStore
 	Exports     *store.ExportsMem
 	MaxAttempts int
+	Logger      *log.Logger
 }
 
 // NewRunner — адаптер под jobs.Runner.
 func NewRunner(d Deps) jobs.Runner {
 	return func(ctx context.Context, t jobs.Task) error {
+		lg := d.Logger
+		if lg == nil {
+			lg = log.Default()
+		}
+
 		p, ok := t.Payload.(ExportPayload)
 		if !ok {
 			d.Exports.UpdateStatus(t.ExportID, jobs.StatusError, 0, strPtr("invalid payload"))
 			return nil
 		}
-		if d.Exports.IsCancelRequested(p.ExportID) {
-			d.Exports.UpdateStatus(p.ExportID, jobs.StatusCanceled, 0, strPtr("canceled before start"))
-			return nil
+		if d.MaxAttempts <= 0 {
+			d.MaxAttempts = 3
 		}
 
-		d.Exports.UpdateStatus(p.ExportID, jobs.StatusRunning, 5, nil)
+		lg.Printf("export %s: start (attempt=%d) owner=%s repo=%s ref=%s format=%s profile=%s",
+			p.ExportID, t.Attempt+1, p.Owner, p.Repo, p.Ref, strings.ToLower(p.Format), p.Profile)
 
-		maxAttempts := d.MaxAttempts
-		if maxAttempts <= 0 {
-			maxAttempts = 3
-		}
-		retryOrFail := func(message, reason string, after time.Duration) error {
-			if t.Attempt+1 < maxAttempts {
-				if after <= 0 {
-					after = time.Second
-				}
-				d.Exports.UpdateStatus(p.ExportID, jobs.StatusQueued, 0, strPtr(message))
-				return &jobs.RetryableError{After: after, Reason: reason}
-			}
-			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr(message))
-			return nil
-		}
-
-		// 1) скачиваем tarball
-		rc, err := d.GH.GetTarball(ctx, p.Owner, p.Repo, p.Ref)
+		// Создаём writer для артефакта (FSStore.CreateArtifact)
+		fileName := artifactFileName(p)
+		aw, meta, err := d.Store.CreateArtifact(p.ExportID, strings.ToLower(p.Format), fileName)
 		if err != nil {
-			var rle *githubclient.RateLimitedError
-			switch {
-			case errors.As(err, &rle):
-				delay := time.Until(time.Unix(rle.Reset, 0))
-				if delay < time.Second {
-					delay = time.Second
-				}
-				return retryOrFail("rate limited; retry later", "GitHub rate limited", delay)
-			case errors.Is(err, githubclient.ErrUpstream):
-				return retryOrFail("upstream error; retry later", "GitHub 5xx", 2*time.Second)
-			case errors.Is(err, githubclient.ErrNotFound):
-				d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("repository or ref not found"))
-				return nil
-			default:
-				return retryOrFail("network error; retry later", "network", 2*time.Second)
-			}
-		}
-		defer rc.Close()
-		d.Exports.SetProgress(p.ExportID, 20)
-
-		if d.Exports.IsCancelRequested(p.ExportID) || ctx.Err() != nil {
-			d.Exports.UpdateStatus(p.ExportID, jobs.StatusCanceled, 0, strPtr("canceled"))
-			return nil
-		}
-
-		// 2) создаём сам файл артефакта
-		var ext, name string
-		switch strings.ToLower(p.Format) {
-		case "zip":
-			ext, name = "zip", "bundle.zip"
-		case "txt":
-			ext, name = "txt", "concat.txt"
-		case "md":
-			ext, name = "zip", "promptpack.zip" // prompt pack — zip с md-файлами
-		default:
-			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("unknown format"))
-			return nil
-		}
-
-		aw, meta, err := d.Store.CreateArtifact(p.ExportID, ext, name)
-		if err != nil {
-			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("cannot create artifact"))
+			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("cannot create artifact writer"))
 			return nil
 		}
 		closed := false
@@ -126,10 +80,126 @@ func NewRunner(d Deps) jobs.Runner {
 			if !closed {
 				_ = aw.Close()
 			}
-		}() // по Close() manifest.json обновится с size
+		}()
 
-		// 3) строим содержимое
-		d.Exports.SetProgress(p.ExportID, 45)
+		d.Exports.UpdateStatus(p.ExportID, jobs.StatusRunning, 10, nil)
+
+		// 1) скачиваем tarball
+		rc, err := d.GH.GetTarball(ctx, p.Owner, p.Repo, p.Ref)
+		if err != nil {
+			var rle *githubclient.RateLimitedError
+			switch {
+			case errors.As(err, &rle):
+				lg.Printf("export %s: tarball rate-limited (attempt=%d) reset=%d err=%v",
+					p.ExportID, t.Attempt+1, rle.Reset, err)
+				delay := time.Until(time.Unix(rle.Reset, 0))
+				if delay < time.Second {
+					delay = time.Second
+				}
+				return retryOrFail("rate limited; retry later", "GitHub rate limited", delay)
+
+			case errors.Is(err, githubclient.ErrUpstream):
+				lg.Printf("export %s: tarball upstream 5xx (attempt=%d) err=%v",
+					p.ExportID, t.Attempt+1, err)
+				return retryOrFail("upstream error; retry later", "GitHub 5xx", 2*time.Second)
+
+			case errors.Is(err, githubclient.ErrNotFound):
+				lg.Printf("export %s: tarball not found owner=%s repo=%s ref=%s err=%v",
+					p.ExportID, p.Owner, p.Repo, p.Ref, err)
+				d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("repository or ref not found"))
+				return nil
+
+			default:
+				lg.Printf("export %s: tarball network error (attempt=%d) err=%v",
+					p.ExportID, t.Attempt+1, err)
+				return retryOrFail("network error; retry later", "network", 2*time.Second)
+			}
+		}
+
+		// --- Новый блок: стримим tarball во временный файл с прогрессом ---
+		tmpf, e := os.CreateTemp("", "tarball-*.tgz")
+		if e != nil {
+			lg.Printf("export %s: cannot create temp file: %v", p.ExportID, e)
+			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("cannot create temp file"))
+			_ = rc.Close()
+			return nil
+		}
+		tmpPath := tmpf.Name()
+		defer func() {
+			_ = tmpf.Close()
+			_ = os.Remove(tmpPath)
+		}()
+
+		const maxDownloadMB = 512 // лимит размера архива
+		const tickMB = 10         // шаг прогресса
+
+		buf := make([]byte, 1<<20) // 1 МБ
+		var (
+			written  int64
+			nextTick int64 = tickMB * (1 << 20)
+			capBytes       = int64(maxDownloadMB) * (1 << 20)
+		)
+
+		// прогресс «Скачивание»: 12..30%
+		d.Exports.UpdateStatus(p.ExportID, jobs.StatusRunning, 12, nil)
+
+		for {
+			if written >= capBytes {
+				lg.Printf("export %s: tarball too large (> %d MB)", p.ExportID, maxDownloadMB)
+				d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("too_large"))
+				_ = rc.Close()
+				return nil
+			}
+			readCap := len(buf)
+			if rem := capBytes - written; int64(readCap) > rem {
+				readCap = int(rem)
+			}
+
+			n, rerr := rc.Read(buf[:readCap])
+			if n > 0 {
+				if _, werr := tmpf.Write(buf[:n]); werr != nil {
+					lg.Printf("export %s: tarball write error: %v", p.ExportID, werr)
+					d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("write error"))
+					_ = rc.Close()
+					return nil
+				}
+				written += int64(n)
+
+				if written >= nextTick {
+					prog := 12 + int((written*18)/capBytes) // 12..30
+					if prog > 30 {
+						prog = 30
+					}
+					d.Exports.UpdateStatus(p.ExportID, jobs.StatusRunning, prog, nil)
+					nextTick += tickMB * (1 << 20)
+				}
+			}
+
+			if rerr != nil {
+				if rerr == io.EOF {
+					break
+				}
+				lg.Printf("export %s: tarball read error: %v", p.ExportID, rerr)
+				_ = rc.Close()
+				return retryOrFail("network error; retry later", "network-read", 2*time.Second)
+			}
+		}
+
+		if err := rc.Close(); err != nil {
+			lg.Printf("export %s: tarball close error: %v", p.ExportID, err)
+			// не фатально для нас — продолжаем
+		}
+
+		if _, err := tmpf.Seek(0, io.SeekStart); err != nil {
+			lg.Printf("export %s: temp seek error: %v", p.ExportID, err)
+			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("temp file seek error"))
+			return nil
+		}
+		// заменяем rc на файл, дальше читаем из диска
+		rc = tmpf
+		// завершили скачивание — переходим к следующему этапу
+		d.Exports.UpdateStatus(p.ExportID, jobs.StatusRunning, 32, nil)
+		// --- Конец нового блока ---
 
 		switch strings.ToLower(p.Format) {
 		case "zip":
@@ -143,9 +213,11 @@ func NewRunner(d Deps) jobs.Runner {
 			}
 			if err := exporter.BuildZipFromTarGz(rc, aw, opts); err != nil {
 				if err == exporter.ErrExportTooLarge {
+					lg.Printf("export %s: build zip too_large", p.ExportID)
 					d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("too_large"))
 					return nil
 				}
+				lg.Printf("export %s: build zip failed (attempt=%d) err=%v", p.ExportID, t.Attempt+1, err)
 				return retryOrFail("build zip failed; retry", "build-zip", 2*time.Second)
 			}
 
@@ -162,9 +234,11 @@ func NewRunner(d Deps) jobs.Runner {
 			}
 			if err := exporter.BuildTxtFromTarGz(rc, aw, topts); err != nil {
 				if err == exporter.ErrExportTooLarge {
+					lg.Printf("export %s: build txt too_large", p.ExportID)
 					d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("too_large"))
 					return nil
 				}
+				lg.Printf("export %s: build txt failed (attempt=%d) err=%v", p.ExportID, t.Attempt+1, err)
 				return retryOrFail("build txt failed; retry", "build-txt", 2*time.Second)
 			}
 
@@ -181,50 +255,96 @@ func NewRunner(d Deps) jobs.Runner {
 				MaskSecrets:     p.SecretScan,
 			}
 			if err := exporter.BuildPromptPackFromTarGz(rc, aw, ppOpts); err != nil {
-				if nsp, ok := err.(*exporter.NeedSecondPassError); ok {
+				// Требуется второй проход
+				if need, ok := err.(*exporter.NeedSecondPassError); ok {
+					lg.Printf("export %s: promptpack need second pass", p.ExportID)
+
 					rc2, e2 := d.GH.GetTarball(ctx, p.Owner, p.Repo, p.Ref)
 					if e2 != nil {
+						lg.Printf("export %s: second pass tarball error (attempt=%d) err=%v",
+							p.ExportID, t.Attempt+1, e2)
 						return retryOrFail("need second pass; tarball retry", "tarball-2nd", 2*time.Second)
 					}
 					defer rc2.Close()
-					if e := exporter.FillSecondPassExcerpts(rc2, nsp); e != nil {
+
+					if e := exporter.FillSecondPassExcerpts(rc2, need); e != nil {
+						lg.Printf("export %s: second pass failed (attempt=%d) err=%v",
+							p.ExportID, t.Attempt+1, e)
 						return retryOrFail("second pass failed; retry", "pp-second-pass", 2*time.Second)
 					}
 				} else {
+					lg.Printf("export %s: promptpack build failed (attempt=%d) err=%v",
+						p.ExportID, t.Attempt+1, err)
 					return retryOrFail("promptpack build failed; retry", "promptpack", 2*time.Second)
 				}
 			}
+
+		default:
+			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("unknown format"))
+			return nil
 		}
 
 		if err := aw.Close(); err != nil {
+			lg.Printf("export %s: artifact finalize error err=%v", p.ExportID, err)
 			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("cannot finalize artifact"))
 			return nil
 		}
 		closed = true
+
+		// после Close() метаданные обновились — перечитаем из writer
 		meta = aw.Meta()
 
-		d.Exports.SetProgress(p.ExportID, 95)
 		d.Exports.AddArtifact(p.ExportID, store.ArtifactMeta{
 			ID:   meta.ID,
 			Kind: meta.Kind,
-			Size: meta.Size, // на Close() в manifest запишется реальный размер
+			Size: meta.Size,
 		})
+		lg.Printf("export %s: done artifact=%s kind=%s size=%dB", p.ExportID, meta.ID, meta.Kind, meta.Size)
 		d.Exports.UpdateStatus(p.ExportID, jobs.StatusDone, 100, nil)
 		return nil
 	}
 }
 
+// retryOrFail — простая стратегия повторов. (Очередь сама решает политику ретраев)
+func retryOrFail(msg, _ string, delay time.Duration) error {
+	if delay <= 0 {
+		delay = 2 * time.Second
+	}
+	return fmt.Errorf("%s", msg)
+}
+
+// hashID — утилита для стабильных идентификаторов.
+func hashID(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		h.Write([]byte(p))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func strPtr(s string) *string { return &s }
 
-func CalcIdemKey(owner, repo, ref, format, profile string, include, exclude []string, secretScan bool, strategy, tokenModel, exporterVersion string) string {
-	h := sha256.New()
-	io.WriteString(h, strings.Join([]string{
-		owner, repo, ref, format, profile,
-		strings.Join(include, ","),
-		strings.Join(exclude, ","),
-		fmt.Sprintf("sec=%v,strat=%s,model=%s,ver=%s", secretScan, strategy, tokenModel, exporterVersion),
-	}, "|"))
-	return hex.EncodeToString(h.Sum(nil))
+// CalcIdemKey — детерминированный ключ идемпотентности.
+func CalcIdemKey(owner, repo, ref, format, profile string, inc, exc []string, secretScan bool, secretStrategy, tokenModel, version string) string {
+	parts := []string{
+		"v=" + version,
+		"o=" + strings.ToLower(owner),
+		"r=" + strings.ToLower(repo),
+		"ref=" + ref,
+		"f=" + format,
+		"p=" + profile,
+		"scan=" + fmt.Sprint(secretScan),
+		"strat=" + strings.ToUpper(secretStrategy),
+		"model=" + tokenModel,
+	}
+	if len(inc) > 0 {
+		parts = append(parts, "inc="+strings.Join(inc, ","))
+	}
+	if len(exc) > 0 {
+		parts = append(parts, "exc="+strings.Join(exc, ","))
+	}
+	return hashID(parts...)
 }
 
 func promptPackProfile(profile string) exporter.Profile {
@@ -235,5 +355,19 @@ func promptPackProfile(profile string) exporter.Profile {
 		return exporter.ProfileRAG
 	default:
 		return exporter.ProfileShort
+	}
+}
+
+// artifactFileName — безопасное имя файла артефакта.
+func artifactFileName(p ExportPayload) string {
+	switch strings.ToLower(p.Format) {
+	case "zip":
+		return "bundle.zip"
+	case "txt":
+		return "bundle.txt"
+	case "md": // Prompt Pack собирается в архив
+		return "promptpack.zip"
+	default:
+		return "artifact.bin"
 	}
 }

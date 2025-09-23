@@ -5,57 +5,85 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
+	_"strconv"
 	"strings"
+	"time"
 )
+
+
+type bodyWithCancel struct {
+    io.ReadCloser
+    cancel context.CancelFunc
+}
+
+func (b *bodyWithCancel) Close() error {
+    if b.cancel != nil {
+        b.cancel()
+    }
+    return b.ReadCloser.Close()
+}
 
 // GetTarball получает .tar.gz (gzip-стрим) по ветке/тегу/коммиту.
 // Возвращает поток res.Body — ОБЯЗАТЕЛЬНО закрыть вызывающему.
+// GetTarball скачивает архив репозитория (tar.gz) для указанного owner/repo/ref.
+// Возвращает io.ReadCloser потока (НЕ забудь закрыть), а также http.StatusCode.
+// Клиент по умолчанию сам последует 302 на codeload.github.com.
 func (c *Client) GetTarball(ctx context.Context, owner, repo, ref string) (io.ReadCloser, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/tarball/%s", c.BaseURL, owner, repo, ref)
+    if ref == "" {
+        ref = "HEAD"
+    }
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	// явно просим бинарный поток
-	req.Header.Set("Accept", "application/octet-stream")
-	req.Header.Set("User-Agent", "cleanhttp/0.1")
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
-	}
+    dlTimeout := 10 * time.Minute
+    if dl, ok := ctx.Deadline(); ok {
+        if left := time.Until(dl); left > 0 && left < dlTimeout {
+            dlTimeout = left
+        }
+    }
+    tctx, cancel := context.WithTimeout(ctx, dlTimeout) // НЕ делаем defer cancel()
 
-	res, err := c.Doer.Do(req)
-	if err != nil {
-		return nil, err
-	}
+    path := fmt.Sprintf("/repos/%s/%s/tarball/%s", owner, repo, ref)
+    req, err := http.NewRequestWithContext(tctx, http.MethodGet, c.BaseURL+ensureLeadingSlash(path), nil)
+    if err != nil {
+        cancel()
+        return nil, err
+    }
+    req.Header.Set("Accept", "application/vnd.github+json")
+    if c.Token != "" {
+        req.Header.Set("Authorization", "Bearer "+c.Token)
+    }
 
-	// rate-limit: 403/429 с Remaining==0
-	if res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusTooManyRequests {
-		if strings.TrimSpace(res.Header.Get("X-RateLimit-Remaining")) == "0" {
-			var reset int64
-			if v := res.Header.Get("X-RateLimit-Reset"); v != "" {
-				if n, _ := strconv.ParseInt(v, 10, 64); n > 0 {
-					reset = n
-				}
-			}
-			_ = res.Body.Close()
-			return nil, &RateLimitedError{Reset: reset}
-		}
-	}
-	if res.StatusCode == http.StatusNotFound {
-		_ = res.Body.Close()
-		return nil, ErrNotFound
-	}
-	if res.StatusCode >= 500 {
-		_ = res.Body.Close()
-		return nil, ErrUpstream
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		_ = res.Body.Close()
-		return nil, fmt.Errorf("unexpected status: %d", res.StatusCode)
-	}
+    res, err := c.Doer.Do(req)
+    if err != nil {
+        cancel()
+        return nil, err
+    }
 
-	// успех: возвращаем поток. Закрывает вызывающий.
-	return res.Body, nil
+    // rate limit
+    if (res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusTooManyRequests) &&
+        strings.TrimSpace(res.Header.Get("X-RateLimit-Remaining")) == "0" {
+        var reset int64
+        fmt.Sscanf(res.Header.Get("X-RateLimit-Reset"), "%d", &reset)
+        io.Copy(io.Discard, res.Body)
+        res.Body.Close()
+        cancel()
+        return nil, &RateLimitedError{Reset: reset}
+    }
+
+    if res.StatusCode >= 200 && res.StatusCode < 300 {
+        // Возвращаем тело, связанное с cancel — он вызовется на Close()
+        return &bodyWithCancel{ReadCloser: res.Body, cancel: cancel}, nil
+    }
+
+    // Ошибочные коды
+    io.Copy(io.Discard, res.Body)
+    res.Body.Close()
+    cancel()
+    switch {
+    case res.StatusCode == http.StatusNotFound:
+        return nil, ErrNotFound
+    case res.StatusCode >= 500:
+        return nil, ErrUpstream
+    default:
+        return nil, fmt.Errorf("unexpected status: %d", res.StatusCode)
+    }
 }

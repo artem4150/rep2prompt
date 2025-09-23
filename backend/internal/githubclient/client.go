@@ -9,7 +9,7 @@ import (
 	"net/http"      // HTTP-клиент, запросы/ответы
 	"strings"       // манипуляция строками (проверка/склейка путей)
 	"time"          // таймауты, тип Duration
-
+	"net"
 	"github.com/yourname/cleanhttp/internal/config" // импортируем Config из нашего проекта
 )
 
@@ -46,18 +46,28 @@ func (e *RateLimitedError) Error() string {
 
 // New создаёт клиент с дефолтным BaseURL и http.Client с таймаутом из cfg.
 func New(cfg config.Config) *Client {
-	// Используем http.Client без глобального Timeout.
-	// Все ограничения по времени устанавливаются через context.WithTimeout
-	// в вызывающем коде (например, для tarball скачивания мы даём до 2 минут).
-	// Глобальный Timeout у http.Client прерывал длительные загрузки файлов и
-	// приводил к ошибке "network error; retry later" при экспорте больших репо.
-	httpClient := &http.Client{}
-	return &Client{
-		BaseURL: "https://api.github.com", // стандартный адрес GitHub REST API
-		Token:   cfg.GitHubToken,          // берём токен из конфига (может быть пустым)
-		Doer:    httpClient,               // по умолчанию используем http.Client как Doer
-		Timeout: cfg.RequestTimeout,       // сохраняем для справки
-	}
+    tr := &http.Transport{
+        Proxy: http.ProxyFromEnvironment,
+        DialContext: (&net.Dialer{
+            Timeout:   10 * time.Second,
+            KeepAlive: 30 * time.Second,
+        }).DialContext,
+        TLSHandshakeTimeout:   10 * time.Second,
+        ExpectContinueTimeout: 1 * time.Second,
+        IdleConnTimeout:       90 * time.Second,
+        MaxIdleConns:          100,
+        MaxIdleConnsPerHost:   10,
+    }
+
+    // Без Client.Timeout — его ставим точечно в методах (см. GetTarball)
+    httpClient := &http.Client{Transport: tr}
+
+    return &Client{
+        BaseURL: "https://api.github.com",
+        Token:   cfg.GitHubToken,
+        Doer:    httpClient,
+        Timeout: cfg.RequestTimeout, // можно хранить для JSON-методов
+    }
 }
 
 // ensureLeadingSlash — маленький helper: гарантирует, что path начинается с "/".
@@ -165,3 +175,4 @@ func (c *Client) GetDefaultBranch(ctx context.Context, owner, repo string) (stri
 	// Успех — возвращаем ветку
 	return out.DefaultBranch, nil
 }
+
