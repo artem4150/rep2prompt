@@ -1,5 +1,6 @@
 export type Theme = 'light' | 'dark';
 export type Page = 'landing' | 'analyze' | 'select' | 'export' | 'jobs' | 'result';
+export type Language = 'ru' | 'en';
 
 export interface RepoData {
   url: string;
@@ -69,7 +70,7 @@ export interface ExportResponse {
   jobId: string;
 }
 
-export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'timeout' | 'canceled';
+export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 
 export interface JobStatusResponse {
   state: JobStatus;
@@ -77,6 +78,8 @@ export interface JobStatusResponse {
   error?: string | null;
   exportId?: string;
   artifacts?: Array<{ id: string; kind: string; size: number }>;
+  failureReason?: string | null;
+  cancelRequested?: boolean;
 }
 
 export interface JobState {
@@ -85,6 +88,8 @@ export interface JobState {
   progress: number;
   error?: string | null;
   exportId?: string;
+  failureReason?: string | null;
+  cancelRequested?: boolean;
 }
 
 export interface ArtifactFile {

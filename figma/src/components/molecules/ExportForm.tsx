@@ -11,6 +11,7 @@ import { Separator } from '../ui/separator';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Play, Settings, FileArchive, FileText, File, Loader2 } from 'lucide-react';
 import { ApiError, createExport } from '../../lib/api';
+import { getFriendlyApiError } from '../../lib/errors';
 
 export const ExportForm: React.FC = () => {
   const {
@@ -133,8 +134,8 @@ export const ExportForm: React.FC = () => {
         setCurrentPage('jobs');
       })
       .catch((err) => {
-        if (err instanceof ApiError && err.message) {
-          setError(err.message);
+        if (err instanceof ApiError) {
+          setError(getFriendlyApiError(err, language) ?? t.errors.generic);
           return;
         }
         setError(t.errors.generic);

@@ -58,6 +58,7 @@ figma/.eslintcache
 figma/npm-debug.log*
 figma/yarn-error.log*
 figma/pnpm-debug.log*
+figma/build/
 
 # --- Ненужные системные файлы в подкаталогах ---
 **/.DS_Store

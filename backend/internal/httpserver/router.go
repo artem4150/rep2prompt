@@ -2,10 +2,12 @@ package httpserver
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
-"log"
+
 	"github.com/yourname/cleanhttp/internal/artifacts"
 	"github.com/yourname/cleanhttp/internal/config"
 	"github.com/yourname/cleanhttp/internal/githubclient"
@@ -18,6 +20,9 @@ import (
 
 func New(cfg config.Config) http.Handler {
 	mux := http.NewServeMux()
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
+	slog.SetDefault(logger)
 
 	// простая главная
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -43,13 +48,13 @@ func New(cfg config.Config) http.Handler {
 
 	exportsDB := store.NewExportsMem("exp")
 	queue := jobs.NewQueue(128)
-runner := worker.NewRunner(worker.Deps{
-    GH:          gh,
-    Store:       fsStore,
-    Exports:     exportsDB,
-    MaxAttempts: 3,
-    Logger:      log.Default(), // <— добавили
-})
+	runner := worker.NewRunner(worker.Deps{
+		GH:          gh,
+		Store:       fsStore,
+		Exports:     exportsDB,
+		MaxAttempts: 3,
+		Logger:      logger.With(slog.String("component", "worker")),
+	})
 	// стартуем воркеров (конкурентность/ретраи можно вынести в cfg/env)
 	go queue.StartWorkers(context.Background(), 4, runner, 3)
 
@@ -80,11 +85,14 @@ runner := worker.NewRunner(worker.Deps{
 
 	// статус/отмена задач
 	api.Handle("/jobs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/cancel") && r.Method == http.MethodPost {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/cancel") && r.Method == http.MethodPost:
 			(&handlers.JobCancelHandler{Exports: exportsDB}).ServeHTTP(w, r)
-			return
+		case strings.HasSuffix(r.URL.Path, "/events"):
+			(&handlers.JobEventsHandler{Exports: exportsDB, Logger: logger.With(slog.String("component", "jobs_sse"))}).ServeHTTP(w, r)
+		default:
+			(&handlers.JobStatusHandler{Exports: exportsDB}).ServeHTTP(w, r)
 		}
-		(&handlers.JobStatusHandler{Exports: exportsDB}).ServeHTTP(w, r)
 	}))
 
 	// монтируем /api/*

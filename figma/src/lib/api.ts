@@ -104,3 +104,24 @@ export const listArtifacts = (exportId: string): Promise<ArtifactsResponse> =>
   request<ArtifactsResponse>(`/api/artifacts/${encodeURIComponent(exportId)}`);
 
 export const getDownloadUrl = (artifactId: string): string => buildUrl(`/api/download/${encodeURIComponent(artifactId)}`);
+
+export const subscribeToJob = (
+  jobId: string,
+  onMessage: (payload: JobStatusResponse) => void,
+  onError?: (event: Event) => void,
+): EventSource => {
+  const url = buildUrl(`/api/jobs/${encodeURIComponent(jobId)}/events`);
+  const source = new EventSource(url);
+  source.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data) as JobStatusResponse;
+      onMessage(payload);
+    } catch (err) {
+      console.error('Failed to parse job event', err);
+    }
+  };
+  if (onError) {
+    source.onerror = onError;
+  }
+  return source;
+};
