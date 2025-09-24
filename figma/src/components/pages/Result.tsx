@@ -90,8 +90,9 @@ export const Result: React.FC = () => {
 
           {artifacts.length > 0 ? (
             <>
-              {quickArtifact && <QuickTextExport artifact={quickArtifact} />}
+              
               <ArtifactsList artifacts={artifacts} />
+              
             </>
           ) : (
             <Alert variant="destructive">
@@ -114,9 +115,13 @@ export const Result: React.FC = () => {
               <Plus className="w-4 h-4" />
               {t.createAnother}
             </Button>
+            
           </div>
+              {quickArtifact && <QuickTextExport artifact={quickArtifact} />}
         </div>
+        
       </div>
+      
     </div>
   );
 };

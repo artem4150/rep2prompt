@@ -40,7 +40,7 @@ type PromptPackOptions struct {
 	ExcludeGlobs     []string
 	MaxLinesPerFile  int
 	MaskSecrets      bool
-	StripFirstDir    bool // <— НОВОЕ: отрезать первый сегмент (owner-repo-<hash>/)
+	StripFirstDir    bool // отрезать первый сегмент (owner-repo-<hash>/)
 
 	TokenBudget   int
 	ReservePct    int
@@ -61,7 +61,7 @@ type packState struct {
 	owner, repo, ref string
 	profile          Profile
 	nowUTC           time.Time
-
+	stripFirstDir bool
 	// секции
 	summary, treeMD, depsMD, envMD, prompts bytes.Buffer
 
@@ -163,9 +163,8 @@ func BuildPromptPackFromTarGz(src io.Reader, dst io.Writer, opts PromptPackOptio
 	tr := tar.NewReader(gz)
 
 	zw := zip.NewWriter(dst)
-	// ВАЖНО: НЕ закрываем здесь; закроем во 2-м проходе,
-	// иначе архив получится пустым.
-	// defer zw.Close()  // <- удалено
+	// ВАЖНО: закрываем zip только во втором проходе.
+	// defer zw.Close()
 
 	// бюджет/оценка
 	reg := tokenest.DefaultRegistry()
@@ -196,6 +195,7 @@ func BuildPromptPackFromTarGz(src io.Reader, dst io.Writer, opts PromptPackOptio
 		overlapTokens:   opts.OverlapTokens,
 		maxLinesPerFile: opts.MaxLinesPerFile,
 		maskSecrets:     opts.MaskSecrets,
+		stripFirstDir:   opts.StripFirstDir,
 	}
 	if st.maskSecrets {
 		st.scanner = secrets.NewScanner(secrets.Config{Strategy: secrets.StrategyRedacted})
@@ -267,15 +267,16 @@ func (st *packState) scanTar(tr *tar.Reader, opts PromptPackOptions) error {
 	rePy := regexp.MustCompile(`os\.getenv\(\s*['"]([A-Z0-9_]+)['"]\s*\)`)
 	reDotNet := regexp.MustCompile(`Environment\.GetEnvironmentVariable\(\s*"(.*?)"\s*\)`)
 
+	// Паттерны в нижнем регистре (будем матчить по lowerRel)
 	keyGlobs := []struct {
 		pat  string
 		prio int
 	}{
-		{"README*", 1},
+		{"readme*", 1},
 		{"cmd/**/main.go", 1}, {"internal/server/**", 2},
 		{"apps/**/app/**", 2}, {"pages/**", 2}, {"next.config.*", 2},
-		{"Program.cs", 1}, {"Startup.cs", 1}, {"Controllers/**", 2},
-		{"Makefile", 2}, {"Dockerfile*", 2}, {"docker-compose*.yml", 2}, {"k8s/**", 3},
+		{"program.cs", 1}, {"startup.cs", 1}, {"controllers/**", 2},
+		{"makefile", 2}, {"dockerfile*", 2}, {"docker-compose*.yml", 2}, {"k8s/**", 3},
 		{"internal/**", 3}, {"src/**", 3},
 		{"package.json", 1}, {"go.mod", 1}, {"*.csproj", 1}, {"pyproject.toml", 1}, {"requirements.txt", 1},
 	}
@@ -402,9 +403,9 @@ func (st *packState) scanTar(tr *tar.Reader, opts PromptPackOptions) error {
 			}
 		}
 
-		// кандидаты на EXCERPTS
+		// кандидаты на EXCERPTS — регистронезависимо
 		for _, kg := range keyGlobs {
-			if filters.Match(rel, []string{kg.pat}, nil) {
+			if filters.Match(lower, []string{kg.pat}, nil) {
 				st.excerptCandidates = append(st.excerptCandidates, excerptRef{Path: rel, Priority: kg.prio})
 				break
 			}
@@ -518,53 +519,87 @@ func (st *packState) renderEnv() {
 	fmt.Fprintln(b)
 }
 
-func (st *packState) renderPrompts() {
-	var b = &st.prompts
-	fmt.Fprintln(b, "## 05_PROMPTS")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "- Обзор кода: «Объясни архитектуру, точки входа и риски. Начни с 3 bullets, затем детали по модулям.»")
-	fmt.Fprintln(b, "- Рефакторинг файла: «Вот контекст (ниже). Перепиши с учётом линтера и кодстайла, не меняя поведение.»")
-	fmt.Fprintln(b, "- Тесты: «Сгенерируй юнит-тесты для X с покрытием Y и примерами граничных случаев.»")
-	fmt.Fprintln(b, "- Миграции/деплой: «Обнови Dockerfile под актуальный LTS/Go 1.23. Объясни изменения.»")
-	fmt.Fprintln(b, "- Q&A: «Отвечай на вопросы по модулю X, цитируя пути и строки из врезок.»")
-	fmt.Fprintln(b)
-}
-
 // ===== Врезки + чанкование по токенам =====
 
 func (st *packState) renderExcerptsAndWriteZip(tr *tar.Reader, zw *zip.Writer) error {
 	var main bytes.Buffer
 	write := func(s string) { main.WriteString(s) }
 
+	// заголовочные секции
 	pre := st.summary.String() + st.treeMD.String() + st.depsMD.String() + st.envMD.String() + st.prompts.String()
 	write(pre)
 	st.mainUsedTokens = st.est.CountTokens(pre, st.modelID)
-
 	write("## 06_EXCERPTS\n\n")
 	st.mainUsedTokens += st.est.CountTokens("## 06_EXCERPTS\n\n", st.modelID)
 
-	newChunk := func(title string) *chunk {
-		c := &chunk{title: title, maxTokens: st.usableTokens}
-		st.chunks = append(st.chunks, *c)
-		return &st.chunks[len(st.chunks)-1]
+	// хотим: путь -> приоритет
+	want := make(map[string]int, len(st.excerptCandidates))
+	for _, r := range st.excerptCandidates {
+		want[r.Path] = r.Priority
 	}
 
-	for _, ref := range st.excerptCandidates {
-		seg, lines, lang, err := extractHead(tr, ref.Path, st.maxLinesPerFile)
+	type item struct {
+		Path  string
+		Lang  string
+		Seg   string
+		Lines int
+		Prio  int
+	}
+	var collected []item
+
+	// Сканируем TAR ОДИН РАЗ и собираем только нужные файлы
+	for {
+		hdr, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
-		if err != nil {
+		if err != nil || hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		name := hdr.Name
+		if st.stripFirstDir {
+			name = stripFirstDir(name)
+		}
+		rel, err := filters.NormalizeRel(name)
+		if err != nil || rel == "" {
+			drain(tr, hdr.Size)
+			continue
+		}
+		// интересен ли нам этот путь?
+		prio, ok := want[rel]
+		if !ok {
+			drain(tr, hdr.Size)
 			continue
 		}
 
-		// маскирование
-		if st.maskSecrets && st.scanner != nil {
+		// читаем первые N строк прямо из текущей позиции
+		sc := bufio.NewScanner(tr)
+		sc.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+		var buf bytes.Buffer
+		lines := 0
+		for sc.Scan() {
+			lines++
+			line := sc.Text()
+			if strings.HasSuffix(line, "\r") {
+				line = strings.TrimSuffix(line, "\r")
+			}
+			buf.WriteString(line)
+			buf.WriteByte('\n')
+			if st.maxLinesPerFile > 0 && lines >= st.maxLinesPerFile {
+				break
+			}
+		}
+
+		seg := buf.String()
+		lang := codeLangByExt(rel)
+
+		// Маскирование секретов (построчно)
+		if st.maskSecrets && st.scanner != nil && seg != "" {
 			var b strings.Builder
 			ln := 0
 			for _, line := range strings.Split(seg, "\n") {
 				ln++
-				finds := st.scanner.ScanLine(ref.Path, line, ln)
+				finds := st.scanner.ScanLine(rel, line, ln)
 				out := st.scanner.ApplyStrategy(line, finds)
 				if out != line {
 					st.maskedLines++
@@ -575,9 +610,37 @@ func (st *packState) renderExcerptsAndWriteZip(tr *tar.Reader, zw *zip.Writer) e
 			seg = b.String()
 		}
 
-		header := fmt.Sprintf("### FILE: %s (first %d lines)\n", ref.Path, lines)
-		codeFence := "```" + lang + "\n"
-		block := header + codeFence + seg + "```\n\n"
+		collected = append(collected, item{
+			Path:  rel,
+			Lang:  lang,
+			Seg:   seg,
+			Lines: lines,
+			Prio:  prio,
+		})
+	}
+
+	// сортируем собранное по приоритету, затем по пути
+	sort.Slice(collected, func(i, j int) bool {
+		if collected[i].Prio != collected[j].Prio {
+			return collected[i].Prio < collected[j].Prio
+		}
+		return collected[i].Path < collected[j].Path
+	})
+
+	// пишем в главный файл и чанки, учитывая бюджет
+	newChunk := func(title string) *chunk {
+		c := &chunk{title: title, maxTokens: st.usableTokens}
+		st.chunks = append(st.chunks, *c)
+		return &st.chunks[len(st.chunks)-1]
+	}
+
+	for _, it := range collected {
+		if it.Seg == "" || it.Lines == 0 {
+			continue
+		}
+		header := fmt.Sprintf("### FILE: %s (first %d lines)\n", it.Path, it.Lines)
+		codeFence := "```" + it.Lang + "\n"
+		block := header + codeFence + it.Seg + "```\n\n"
 		if st.maskedLines > 0 {
 			block += "_секреты замаскированы_\n\n"
 		}
@@ -597,11 +660,9 @@ func (st *packState) renderExcerptsAndWriteZip(tr *tar.Reader, zw *zip.Writer) e
 			need += st.overlapTokens
 		}
 		if st.curChunk.usedTokens > 0 && st.curChunk.usedTokens+need > st.curChunk.maxTokens {
-			// закрываем текущий — открываем новый
 			st.curChunk = newChunk(fmt.Sprintf("CHUNK %d", len(st.chunks)+1))
 			need = blockTokens
 		}
-		// overlap из предыдущего чанка
 		if len(st.chunks) > 0 && st.curChunk.usedTokens > 0 && st.overlapTokens > 0 {
 			prev := &st.chunks[len(st.chunks)-1]
 			ov := st.lastNTokensFrom(prev.body.String(), st.overlapTokens)
@@ -612,18 +673,16 @@ func (st *packState) renderExcerptsAndWriteZip(tr *tar.Reader, zw *zip.Writer) e
 			st.curChunk.body.WriteString("\n")
 			st.curChunk.usedTokens += st.overlapTokens
 		}
-
 		st.curChunk.body.WriteString(block)
-		st.curChunk.files = append(st.curChunk.files, chunkFile{Path: ref.Path, Lines: lines, Language: lang})
+		st.curChunk.files = append(st.curChunk.files, chunkFile{Path: it.Path, Lines: it.Lines, Language: it.Lang})
 		st.curChunk.usedTokens += blockTokens
 	}
 
-	// запись основного файла
+	// главный md
 	fn := fmt.Sprintf("PromptPack-%s.md", st.profile)
 	if err := writeZipEntry(zw, fn, main.Bytes()); err != nil {
 		return err
 	}
-
 	// чанки
 	for i := range st.chunks {
 		ch := &st.chunks[i]
@@ -645,6 +704,7 @@ func (st *packState) renderExcerptsAndWriteZip(tr *tar.Reader, zw *zip.Writer) e
 	return nil
 }
 
+
 // ===== Утилиты и парсеры =====
 
 func isReadme(p string) bool {
@@ -654,19 +714,22 @@ func isReadme(p string) bool {
 
 func (st *packState) addToTree(rel string) {
 	dir := "repo-root"
-	if strings.Contains(rel, "/") {
-		parts := strings.Split(rel, "/")
-		for i := 0; i < len(parts)-1; i++ {
-			prefix := path.Join(parts[:i+1]...)
-			parent := path.Join(dir, prefix)
-			child := parts[i+1]
-			st.dirChildren[parent] = addChildUnique(st.dirChildren[parent], child)
+	parts := strings.Split(rel, "/")
+	parent := dir
+
+	// добавить все промежуточные каталоги
+	for i := 0; i < len(parts)-1; i++ {
+		child := parts[i]
+		if child == "" {
+			continue
 		}
-		parent := path.Join(dir, path.Dir(rel))
-		child := path.Base(rel)
 		st.dirChildren[parent] = addChildUnique(st.dirChildren[parent], child)
-	} else {
-		st.dirChildren[dir] = addChildUnique(st.dirChildren[dir], rel)
+		parent = path.Join(parent, child)
+	}
+	// добавить сам файл (или последний сегмент)
+	last := parts[len(parts)-1]
+	if last != "" {
+		st.dirChildren[parent] = addChildUnique(st.dirChildren[parent], last)
 	}
 }
 
@@ -693,6 +756,7 @@ func renderDir(b *bytes.Buffer, root, pathPrefix string, m map[string][]string, 
 		shown++
 		indent := strings.Repeat("│  ", level)
 		fmt.Fprintf(b, "%s├─ %s\n", indent, name)
+		// простой критерий для каталогов: нет точки
 		if !strings.Contains(name, ".") {
 			nextPrefix := name
 			if pathPrefix != "" {
@@ -740,8 +804,7 @@ func unique(xs []string) []string {
 	return out
 }
 
-// countReader — определён в txtbuilder.go (в этом же пакете). Здесь НЕ повторяем,
-// чтобы избежать ошибки "redeclared in this block".
+// countReader — определён в txtbuilder.go (в этом же пакете).
 
 func readWhole(r io.Reader, maxBytes int, expect int) string {
 	limit := maxBytes
@@ -1026,3 +1089,16 @@ func (st *packState) parsePythonDeps(filename, content string) {
 		st.deps = append(st.deps, Dep{Name: name, Version: ver, Source: "pip-project"})
 	}
 }
+
+func (st *packState) renderPrompts() {
+	var b = &st.prompts
+	fmt.Fprintln(b, "## 05_PROMPTS")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "- Обзор кода: «Объясни архитектуру, точки входа и риски. Начни с 3 bullets, затем детали по модулям.»")
+	fmt.Fprintln(b, "- Рефакторинг файла: «Вот контекст (ниже). Перепиши с учётом линтера и кодстайла, не меняя поведение.»")
+	fmt.Fprintln(b, "- Тесты: «Сгенерируй юнит-тесты для X с покрытием Y и примерами граничных случаев.»")
+	fmt.Fprintln(b, "- Миграции/деплой: «Обнови Dockerfile под актуальный LTS/Go 1.23. Объясни изменения.»")
+	fmt.Fprintln(b, "- Q&A: «Отвечай на вопросы по модулю X, цитируя пути и строки из врезок.»")
+	fmt.Fprintln(b)
+}
+
