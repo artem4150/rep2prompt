@@ -7,9 +7,7 @@ import { Jobs } from './components/pages/Jobs';
 import { Result } from './components/pages/Result';
 import { Topbar } from './components/organisms/Topbar';
 import { fetchRepositoryTree } from './lib/api';
-import { ArtifactFile, JobState, Page, RepoData, Theme, TreeItem } from './lib/types';
-
-type Language = 'ru' | 'en';
+import { ArtifactFile, JobState, Page, RepoData, Theme, TreeItem, Language } from './lib/types';
 
 interface AppContextType {
   theme: Theme;

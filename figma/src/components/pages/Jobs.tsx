@@ -3,7 +3,8 @@ import { useAppContext } from '../../App';
 import { JobProgress } from '../molecules/JobProgress';
 import { Button } from '../ui/button';
 import { ArrowLeft } from 'lucide-react';
-import { ApiError, cancelJob, getJobStatus, getDownloadUrl, listArtifacts } from '../../lib/api';
+import { ApiError, cancelJob, getDownloadUrl, listArtifacts, subscribeToJob } from '../../lib/api';
+import { getFriendlyApiError, getFriendlyFailureReason } from '../../lib/errors';
 
 export const Jobs: React.FC = () => {
   const {
@@ -14,9 +15,10 @@ export const Jobs: React.FC = () => {
     setArtifacts,
     setArtifactsExpiresAt,
   } = useAppContext();
-  const [pollError, setPollError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [isCanceling, setIsCanceling] = useState(false);
   const [hasNavigated, setHasNavigated] = useState(false);
+  const [subscriptionKey, setSubscriptionKey] = useState(0);
 
   const texts = {
     ru: {
@@ -37,21 +39,22 @@ export const Jobs: React.FC = () => {
 
   useEffect(() => {
     setHasNavigated(false);
-    setPollError(null);
+    setStreamError(null);
   }, [currentJob?.id]);
 
   useEffect(() => {
     if (!currentJob) {
       return;
     }
+    setStreamError(null);
     let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const status = await getJobStatus(currentJob.id);
+    const source = subscribeToJob(
+      currentJob.id,
+      async (status) => {
         if (cancelled) {
           return;
         }
+        setStreamError(null);
         setCurrentJob((prev) =>
           prev
             ? {
@@ -59,59 +62,72 @@ export const Jobs: React.FC = () => {
                 state: status.state,
                 progress: status.progress,
                 error: status.error ?? null,
+                failureReason: status.failureReason ?? null,
+                cancelRequested: status.cancelRequested ?? prev.cancelRequested ?? false,
                 exportId: status.exportId ?? prev.exportId,
               }
             : prev
         );
-        setPollError(status.error ?? null);
         if (status.state === 'done' && status.exportId && !hasNavigated) {
-          const artifactsResponse = await listArtifacts(status.exportId);
-          if (cancelled) {
-            return;
+          try {
+            const artifactsResponse = await listArtifacts(status.exportId);
+            if (cancelled) {
+              return;
+            }
+            setArtifacts(
+              artifactsResponse.files.map((file) => ({
+                id: file.id,
+                kind: file.kind,
+                name: file.name,
+                size: file.size,
+                downloadUrl: getDownloadUrl(file.id),
+              }))
+            );
+            setArtifactsExpiresAt(artifactsResponse.expiresAt);
+            setHasNavigated(true);
+            setCurrentPage('result');
+          } catch (err) {
+            if (!cancelled) {
+              const message = err instanceof ApiError ? getFriendlyApiError(err, language) : language === 'ru' ? 'Не удалось получить артефакты.' : 'Failed to fetch artifacts.';
+              setStreamError(message);
+            }
           }
-          setArtifacts(
-            artifactsResponse.files.map((file) => ({
-              id: file.id,
-              kind: file.kind,
-              name: file.name,
-              size: file.size,
-              downloadUrl: getDownloadUrl(file.id),
-            }))
-          );
-          setArtifactsExpiresAt(artifactsResponse.expiresAt);
-          setHasNavigated(true);
-          setCurrentPage('result');
         }
-      } catch (err) {
+      },
+      () => {
         if (!cancelled) {
-          setPollError(err instanceof ApiError ? err.message : language === 'ru' ? 'Ошибка обновления статуса.' : 'Failed to update job status.');
+          setStreamError((prev) => prev ?? (language === 'ru' ? 'Потеряно соединение с обновлениями. Переподключаемся…' : 'Lost connection to progress updates. Reconnecting…'));
         }
       }
-    };
-
-    poll();
-    const interval = setInterval(poll, 2000);
+    );
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      source.close();
     };
-  }, [currentJob?.id, hasNavigated, language, setArtifacts, setArtifactsExpiresAt, setCurrentJob, setCurrentPage]);
+  }, [currentJob?.id, hasNavigated, language, setArtifacts, setArtifactsExpiresAt, setCurrentJob, setCurrentPage, subscriptionKey]);
 
   const handleCancel = () => {
     if (!currentJob) {
       return;
     }
     setIsCanceling(true);
-    cancelJob(currentJob.id).catch((err) => {
-      setPollError(err instanceof ApiError ? err.message : language === 'ru' ? 'Не удалось отменить задачу.' : 'Failed to cancel the job.');
-    }).finally(() => setIsCanceling(false));
+    setCurrentJob((prev) => (prev ? { ...prev, cancelRequested: true } : prev));
+    cancelJob(currentJob.id)
+      .catch((err) => {
+        const message = err instanceof ApiError ? getFriendlyApiError(err, language) : language === 'ru' ? 'Не удалось отменить задачу.' : 'Failed to cancel the job.';
+        setStreamError(message);
+      })
+      .finally(() => setIsCanceling(false));
   };
 
   const handleRetry = () => {
-    setPollError(null);
+    setStreamError(null);
+    setSubscriptionKey((prev) => prev + 1);
   };
 
   const jobState = useMemo(() => currentJob, [currentJob]);
+
+  const friendlyFailure = jobState ? getFriendlyFailureReason(jobState.failureReason ?? jobState.error ?? null, language) : null;
 
   if (!jobState) {
     return (
@@ -156,12 +172,13 @@ export const Jobs: React.FC = () => {
           progress={jobState.progress}
           jobId={jobState.id}
           state={jobState.state}
-          error={pollError ?? jobState.error ?? null}
+          error={friendlyFailure}
           onCancel={handleCancel}
           cancelDisabled={isCanceling}
+          cancelRequested={jobState.cancelRequested ?? false}
         />
 
-        {pollError && (
+        {streamError && (
           <div className="mt-6 flex justify-end">
             <Button size="sm" variant="outline" onClick={handleRetry}>
               {t.retry}

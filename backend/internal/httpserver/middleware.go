@@ -3,7 +3,7 @@ package httpserver
 import (
 	"bytes"
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -27,17 +27,20 @@ func RequestID() func(http.Handler) http.Handler {
 }
 
 func Recoverer() func(http.Handler) http.Handler {
-    return func(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            defer func() {
-                if rec := recover(); rec != nil {
-                    log.Printf("panic: %v req_id=%s", rec, ReqIDFromContext(r.Context()))
-                    httputil.WriteError(w, http.StatusInternalServerError, "internal_error", "internal server error", nil)
-                }
-            }()
-            next.ServeHTTP(w, r)
-        })
-    }
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					slog.Default().Error("panic recovered",
+						slog.Any("panic", rec),
+						slog.String("requestId", ReqIDFromContext(r.Context())),
+					)
+					httputil.WriteError(w, http.StatusInternalServerError, "internal_error", "internal server error", nil)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func Timeout(d time.Duration) func(http.Handler) http.Handler {
@@ -68,7 +71,12 @@ func Timeout(d time.Duration) func(http.Handler) http.Handler {
 				brw.flush()
 			case <-ctx.Done():
 				// Время вышло — логируем и отвечаем клиенту 504 (Gateway Timeout).
-				log.Printf("timeout %s %s req_id=%s", r.Method, r.URL.Path, ReqIDFromContext(r.Context()))
+				slog.Default().Warn("request timeout",
+					slog.String("method", r.Method),
+					slog.String("path", r.URL.Path),
+					slog.String("requestId", ReqIDFromContext(r.Context())),
+					slog.Duration("timeout", d),
+				)
 				httputil.WriteError(w, http.StatusGatewayTimeout, "timeout", "request timed out", nil)
 			}
 		})
@@ -145,9 +153,14 @@ func Logger() func(http.Handler) http.Handler {
 			start := time.Now()
 			next.ServeHTTP(rec, r)
 			dur := time.Since(start)
-			// Простой формат лога — легко читать глазами и парсить по пробелам.
-			log.Printf("%s %s -> %d (%s) bytes=%d req_id=%s",
-				r.Method, r.URL.Path, rec.status, dur, rec.bytes, ReqIDFromContext(r.Context()))
+			slog.Default().Info("request completed",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.Int("status", rec.status),
+				slog.Duration("duration", dur),
+				slog.Int("bytes", rec.bytes),
+				slog.String("requestId", ReqIDFromContext(r.Context())),
+			)
 		})
 	}
 }

@@ -10,12 +10,11 @@ import (
 type Status string
 
 const (
-	StatusQueued   Status = "queued"
-	StatusRunning  Status = "running"
-	StatusDone     Status = "done"
-	StatusError    Status = "error"
-	StatusTimeout  Status = "timeout"
-	StatusCanceled Status = "canceled"
+	StatusQueued    Status = "queued"
+	StatusRunning   Status = "running"
+	StatusDone      Status = "done"
+	StatusError     Status = "error"
+	StatusCancelled Status = "cancelled"
 )
 
 // RetryableError — сигнал воркеру, что ошибку можно/нужно ретраить.
@@ -124,7 +123,7 @@ func (q *Queue) StartWorkers(ctx context.Context, n int, runner Runner, maxAttem
 					delay = delay << t.Attempt
 					jitter := time.Duration(int64(delay) / 5)
 					if jitter > 0 {
-						delay += time.Duration(time.Now().UnixNano()%int64(jitter)) // простой джиттер
+						delay += time.Duration(time.Now().UnixNano() % int64(jitter)) // простой джиттер
 					}
 					t.Attempt++
 					q.EnqueueAfter(Default, t, delay)

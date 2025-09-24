@@ -25,15 +25,17 @@ interface JobProgressProps {
   error?: string | null;
   onCancel: () => void;
   cancelDisabled?: boolean;
+  cancelRequested?: boolean;
 }
 
-export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state, error, onCancel, cancelDisabled }) => {
+export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state, error, onCancel, cancelDisabled, cancelRequested }) => {
   const { language } = useAppContext();
 
   const texts = {
     ru: {
       progress: 'Прогресс',
       cancel: 'Отменить',
+      canceling: 'Отменяем…',
       stages: [
         'Подготовка',
         'Скачивание',
@@ -55,7 +57,6 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state
       statusCompleted: 'Завершено',
       statusCanceled: 'Отменено',
       statusError: 'Ошибка',
-      statusTimeout: 'Таймаут',
       job: 'Задача',
       canceledNotice: 'Задача была отменена.',
       stagesTitle: 'Этапы выполнения',
@@ -63,6 +64,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state
     en: {
       progress: 'Progress',
       cancel: 'Cancel',
+      canceling: 'Cancelling…',
       stages: [
         'Preparation',
         'Downloading',
@@ -82,9 +84,8 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state
       statusPending: 'Pending',
       statusRunning: 'Running',
       statusCompleted: 'Completed',
-      statusCanceled: 'Canceled',
+      statusCanceled: 'Cancelled',
       statusError: 'Error',
-      statusTimeout: 'Timed out',
       job: 'Job',
       canceledNotice: 'The job was canceled.',
       stagesTitle: 'Execution stages',
@@ -154,16 +155,16 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state
         return <Badge variant="default">{t.statusRunning}</Badge>;
       case 'queued':
         return <Badge variant="outline">{t.statusPending}</Badge>;
-      case 'canceled':
+      case 'cancelled':
         return <Badge variant="outline">{t.statusCanceled}</Badge>;
-      case 'timeout':
-        return <Badge variant="destructive">{t.statusTimeout}</Badge>;
       case 'error':
         return <Badge variant="destructive">{t.statusError}</Badge>;
       default:
         return null;
     }
   };
+
+  const cancelButtonLabel = cancelRequested ? t.canceling : t.cancel;
 
   return (
     <div className="space-y-6">
@@ -192,10 +193,10 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state
               size="sm"
               onClick={onCancel}
               className="gap-2"
-              disabled={cancelDisabled || state !== 'running'}
+              disabled={cancelDisabled || cancelRequested || state !== 'running'}
             >
               <Square className="w-4 h-4" />
-              {t.cancel}
+              {cancelButtonLabel}
             </Button>
           </div>
         </CardContent>
@@ -240,7 +241,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({ progress, jobId, state
         </Alert>
       )}
 
-      {state === 'canceled' && (
+      {state === 'cancelled' && (
         <Alert>
           <AlertDescription>{t.canceledNotice}</AlertDescription>
         </Alert>

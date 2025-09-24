@@ -38,9 +38,9 @@ type Export struct {
 
 	Options ExportOptions
 
-	Status    jobs.Status
-	Progress  int
-	ErrorText *string
+	Status        jobs.Status
+	Progress      int
+	FailureReason *string
 
 	CancelRequested bool
 
@@ -50,20 +50,36 @@ type Export struct {
 	FinishedAt *time.Time
 }
 
+// ExportSnapshot — срез состояния для отдачи наружу (API, SSE).
+type ExportSnapshot struct {
+	ID              string
+	Status          jobs.Status
+	Progress        int
+	FailureReason   *string
+	CancelRequested bool
+	Artifacts       []ArtifactMeta
+	CreatedAt       time.Time
+	StartedAt       *time.Time
+	FinishedAt      *time.Time
+}
+
 // ExportsMem — потокобезопасное in-memory хранилище (MVP).
 type ExportsMem struct {
-	mu       sync.RWMutex
-	byID     map[string]*Export
-	byIdem   map[string]string // idemKey → exportID
-	genSeq   int64
-	idPrefix string
+	mu        sync.RWMutex
+	byID      map[string]*Export
+	byIdem    map[string]string // idemKey → exportID
+	genSeq    int64
+	idPrefix  string
+	listeners map[string]map[int]chan ExportSnapshot
+	nextSubID int
 }
 
 func NewExportsMem(prefix string) *ExportsMem {
 	return &ExportsMem{
-		byID:     make(map[string]*Export),
-		byIdem:   make(map[string]string),
-		idPrefix: prefix,
+		byID:      make(map[string]*Export),
+		byIdem:    make(map[string]string),
+		idPrefix:  prefix,
+		listeners: make(map[string]map[int]chan ExportSnapshot),
 	}
 }
 
@@ -118,26 +134,32 @@ func (s *ExportsMem) Get(id string) (*Export, bool) {
 	return e, ok
 }
 
-func (s *ExportsMem) UpdateStatus(id string, st jobs.Status, progress int, errText *string) {
+func (s *ExportsMem) UpdateStatus(id string, st jobs.Status, progress int, failureReason *string) {
+	var snap ExportSnapshot
+	var listeners []chan ExportSnapshot
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if e, ok := s.byID[id]; ok {
 		e.Status = st
 		if progress >= 0 {
 			e.Progress = progress
 		}
-		// обновляем текст ошибки: если передали nil — очищаем прошлое сообщение
-		e.ErrorText = errText
+		e.FailureReason = failureReason
 		now := time.Now().UTC()
 		switch st {
 		case jobs.StatusRunning:
 			if e.StartedAt == nil {
 				e.StartedAt = &now
 			}
-		case jobs.StatusDone, jobs.StatusError, jobs.StatusTimeout, jobs.StatusCanceled:
+		case jobs.StatusDone, jobs.StatusError, jobs.StatusCancelled:
 			e.FinishedAt = &now
 		}
+		snap = snapshotLocked(e)
+		listeners = s.collectListenersLocked(id)
 	}
+	s.mu.Unlock()
+
+	s.dispatch(listeners, snap)
 }
 
 func (s *ExportsMem) SetProgress(id string, progress int) {
@@ -145,24 +167,42 @@ func (s *ExportsMem) SetProgress(id string, progress int) {
 }
 
 func (s *ExportsMem) AddArtifact(id string, art ArtifactMeta) {
+	var snap ExportSnapshot
+	var listeners []chan ExportSnapshot
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if e, ok := s.byID[id]; ok {
 		e.Artifacts = append(e.Artifacts, art)
+		snap = snapshotLocked(e)
+		listeners = s.collectListenersLocked(id)
 	}
+	s.mu.Unlock()
+
+	s.dispatch(listeners, snap)
 }
 
 func (s *ExportsMem) RequestCancel(id string) bool {
+	var (
+		updated   bool
+		snap      ExportSnapshot
+		listeners []chan ExportSnapshot
+	)
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if e, ok := s.byID[id]; ok {
-		if isTerminal(e.Status) {
-			return false
+		if !isTerminal(e.Status) {
+			e.CancelRequested = true
+			updated = true
+			snap = snapshotLocked(e)
+			listeners = s.collectListenersLocked(id)
 		}
-		e.CancelRequested = true
-		return true
 	}
-	return false
+	s.mu.Unlock()
+
+	if updated {
+		s.dispatch(listeners, snap)
+	}
+	return updated
 }
 
 func (s *ExportsMem) IsCancelRequested(id string) bool {
@@ -176,9 +216,82 @@ func (s *ExportsMem) IsCancelRequested(id string) bool {
 
 func isTerminal(st jobs.Status) bool {
 	switch st {
-	case jobs.StatusDone, jobs.StatusError, jobs.StatusTimeout, jobs.StatusCanceled:
+	case jobs.StatusDone, jobs.StatusError, jobs.StatusCancelled:
 		return true
 	default:
 		return false
 	}
+}
+
+func snapshotLocked(e *Export) ExportSnapshot {
+	snap := ExportSnapshot{
+		ID:              e.ID,
+		Status:          e.Status,
+		Progress:        e.Progress,
+		FailureReason:   e.FailureReason,
+		CancelRequested: e.CancelRequested,
+		CreatedAt:       e.CreatedAt,
+		StartedAt:       e.StartedAt,
+		FinishedAt:      e.FinishedAt,
+	}
+	if len(e.Artifacts) > 0 {
+		snap.Artifacts = make([]ArtifactMeta, len(e.Artifacts))
+		copy(snap.Artifacts, e.Artifacts)
+	}
+	return snap
+}
+
+func (s *ExportsMem) collectListenersLocked(id string) []chan ExportSnapshot {
+	subs := s.listeners[id]
+	if len(subs) == 0 {
+		return nil
+	}
+	out := make([]chan ExportSnapshot, 0, len(subs))
+	for _, ch := range subs {
+		out = append(out, ch)
+	}
+	return out
+}
+
+func (s *ExportsMem) dispatch(listeners []chan ExportSnapshot, snap ExportSnapshot) {
+	if len(listeners) == 0 {
+		return
+	}
+	for _, ch := range listeners {
+		select {
+		case ch <- snap:
+		default:
+			// если потребитель не успевает — пропускаем обновление
+		}
+	}
+}
+
+// Subscribe возвращает канал с обновлениями статуса. Второй возвращаемый аргумент — функция отписки.
+func (s *ExportsMem) Subscribe(id string) (<-chan ExportSnapshot, func(), bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.byID[id]; !ok {
+		return nil, nil, false
+	}
+	s.nextSubID++
+	subID := s.nextSubID
+	ch := make(chan ExportSnapshot, 8)
+	if s.listeners[id] == nil {
+		s.listeners[id] = make(map[int]chan ExportSnapshot)
+	}
+	s.listeners[id][subID] = ch
+	unsubscribe := func() {
+		s.mu.Lock()
+		if subs, ok := s.listeners[id]; ok {
+			if ch, ok := subs[subID]; ok {
+				delete(subs, subID)
+				close(ch)
+				if len(subs) == 0 {
+					delete(s.listeners, id)
+				}
+			}
+		}
+		s.mu.Unlock()
+	}
+	return ch, unsubscribe, true
 }
