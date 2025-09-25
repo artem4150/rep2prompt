@@ -46,17 +46,22 @@ func New(cfg config.Config) http.Handler {
 	fsStore := artifacts.NewFSStore("./data/artifacts", 72) // TTL 72 часа
 	fsStore.StartGC(nil, 5*time.Minute)                     // периодическая очистка по TTL
 
+	var artifactsStore artifacts.ArtifactsStore = fsStore
+
 	exportsDB := store.NewExportsMem("exp")
+	var exportsStore store.ExportsStore = exportsDB
+
 	queue := jobs.NewQueue(128)
+	var jobQueue jobs.JobsQueue = queue
 	runner := worker.NewRunner(worker.Deps{
 		GH:          gh,
-		Store:       fsStore,
-		Exports:     exportsDB,
+		Store:       artifactsStore,
+		Exports:     exportsStore,
 		MaxAttempts: 3,
 		Logger:      logger.With(slog.String("component", "worker")),
 	})
 	// стартуем воркеров (конкурентность/ретраи можно вынести в cfg/env)
-	go queue.StartWorkers(context.Background(), 4, runner, 3)
+	go jobQueue.StartWorkers(context.Background(), 4, runner, 3)
 
 	// ========= API =========
 	api := http.NewServeMux()
@@ -74,24 +79,24 @@ func New(cfg config.Config) http.Handler {
 
 	// шаг 10: асинхронная постановка экспорта
 	api.Handle("/export", &handlers.ExportAsyncHandler{
-		Queue: queue, Exports: exportsDB, GH: gh,
+		Queue: jobQueue, Exports: exportsStore, GH: gh,
 	})
 
 	// список артефактов по exportId
-	api.Handle("/artifacts/", http.StripPrefix("/artifacts", &handlers.ArtifactsListHandler{Store: fsStore}))
+	api.Handle("/artifacts/", http.StripPrefix("/artifacts", &handlers.ArtifactsListHandler{Store: artifactsStore}))
 
 	// скачивание готового файла (по artifactId)
-	api.Handle("/download/", http.StripPrefix("/download", handlers.NewDownloadHandler(fsStore)))
+	api.Handle("/download/", http.StripPrefix("/download", handlers.NewDownloadHandler(artifactsStore)))
 
 	// статус/отмена задач
 	api.Handle("/jobs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/cancel") && r.Method == http.MethodPost:
-			(&handlers.JobCancelHandler{Exports: exportsDB}).ServeHTTP(w, r)
+			(&handlers.JobCancelHandler{Exports: exportsStore}).ServeHTTP(w, r)
 		case strings.HasSuffix(r.URL.Path, "/events"):
-			(&handlers.JobEventsHandler{Exports: exportsDB, Logger: logger.With(slog.String("component", "jobs_sse"))}).ServeHTTP(w, r)
+			(&handlers.JobEventsHandler{Exports: exportsStore, Logger: logger.With(slog.String("component", "jobs_sse"))}).ServeHTTP(w, r)
 		default:
-			(&handlers.JobStatusHandler{Exports: exportsDB}).ServeHTTP(w, r)
+			(&handlers.JobStatusHandler{Exports: exportsStore}).ServeHTTP(w, r)
 		}
 	}))
 

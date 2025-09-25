@@ -17,8 +17,8 @@ const exporterVersion = "v0.10.0"
 
 // ExportAsyncHandler — POST /api/export → ставит задачу в очередь и возвращает jobId.
 type ExportAsyncHandler struct {
-	Queue   *jobs.Queue
-	Exports *store.ExportsMem
+	Queue   jobs.JobsQueue
+	Exports store.ExportsStore
 	GH      *githubclient.Client
 }
 

@@ -1,0 +1,32 @@
+version: '3'
+
+tasks:
+  run:
+    desc: Run the API server
+    dir: backend
+    cmds:
+      - go run ./cmd/api
+
+  build:
+    desc: Build the API binary
+    dir: backend
+    cmds:
+      - go build ./cmd/api
+
+  test:
+    desc: Run Go tests
+    dir: backend
+    cmds:
+      - go test ./...
+
+  fmt:
+    desc: Format Go sources
+    dir: backend
+    cmds:
+      - gofmt -w $$(go list -f '{{.Dir}}' ./...)
+
+  lint:
+    desc: Run basic static analysis
+    dir: backend
+    cmds:
+      - go vet ./...

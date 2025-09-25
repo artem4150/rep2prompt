@@ -18,10 +18,10 @@ import (
 // Для production-режима рекомендуем использовать /api/export (async).
 type ExportHandler struct {
 	GH    *githubclient.Client
-	Store *artifacts.FSStore
+	Store artifacts.ArtifactsStore
 }
 
-func NewExportHandler(gh *githubclient.Client, st *artifacts.FSStore) *ExportHandler {
+func NewExportHandler(gh *githubclient.Client, st artifacts.ArtifactsStore) *ExportHandler {
 	return &ExportHandler{GH: gh, Store: st}
 }
 

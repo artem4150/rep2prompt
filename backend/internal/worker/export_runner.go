@@ -42,8 +42,8 @@ type ExportPayload struct {
 // Deps — зависимости раннера.
 type Deps struct {
 	GH          *githubclient.Client
-	Store       *artifacts.FSStore
-	Exports     *store.ExportsMem
+	Store       artifacts.ArtifactsStore
+	Exports     store.ExportsStore
 	MaxAttempts int
 	Logger      *slog.Logger
 }

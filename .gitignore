@@ -48,6 +48,7 @@ coverage/
 data/
 backend/data/
 artifacts/
+!backend/internal/artifacts/
 
 # --- Frontend (Vite / Node) ---
 figma/node_modules/
