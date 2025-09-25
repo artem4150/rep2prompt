@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,6 +52,13 @@ func Timeout(d time.Duration) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Для SSE-потоков (Accept: text/event-stream) не оборачиваем writer буфером,
+			// чтобы не ломать стриминг и не требовать Flush() от буфера.
+			if strings.Contains(r.Header.Get("Accept"), "text/event-stream") || strings.HasSuffix(r.URL.Path, "/events") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Создаём новый контекст с дедлайном.
 			ctx, cancel := context.WithTimeout(r.Context(), d)
 			defer cancel()
