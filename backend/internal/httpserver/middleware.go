@@ -154,6 +154,14 @@ func (sr *statusRecorder) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// Flush проксирует Flush() базового writer'а, если он поддерживает http.Flusher.
+// Это позволяет не ломать SSE-эндпоинты, которым нужен Flush для отправки событий.
+func (sr *statusRecorder) Flush() {
+	if flusher, ok := sr.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func Logger() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
