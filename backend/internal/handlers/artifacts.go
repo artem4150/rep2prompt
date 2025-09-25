@@ -13,7 +13,7 @@ import (
 
 // ArtifactsListHandler — GET /api/artifacts/:exportId → список файлов + expiresAt.
 type ArtifactsListHandler struct {
-	Store *artifacts.FSStore
+	Store artifacts.ArtifactsStore
 }
 
 func lastPathSegment(p string) string {

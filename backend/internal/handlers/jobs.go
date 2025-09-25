@@ -13,7 +13,7 @@ import (
 
 // JobStatusHandler — GET /api/jobs/:id
 type JobStatusHandler struct {
-	Exports *store.ExportsMem
+	Exports store.ExportsStore
 }
 
 func (h *JobStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +36,7 @@ func (h *JobStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // JobCancelHandler — POST /api/jobs/:id/cancel
 type JobCancelHandler struct {
-	Exports *store.ExportsMem
+	Exports store.ExportsStore
 }
 
 func (h *JobCancelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +59,7 @@ func (h *JobCancelHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // JobEventsHandler — SSE стрим обновлений статуса.
 type JobEventsHandler struct {
-	Exports *store.ExportsMem
+	Exports store.ExportsStore
 	Logger  *slog.Logger
 }
 

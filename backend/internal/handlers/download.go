@@ -12,10 +12,12 @@ import (
 
 // DownloadHandler — GET /api/download/:artifactId → отдаёт файл (стримом).
 type DownloadHandler struct {
-	Store *artifacts.FSStore
+	Store artifacts.ArtifactsStore
 }
 
-func NewDownloadHandler(st *artifacts.FSStore) *DownloadHandler { return &DownloadHandler{Store: st} }
+func NewDownloadHandler(st artifacts.ArtifactsStore) *DownloadHandler {
+	return &DownloadHandler{Store: st}
+}
 
 func (h *DownloadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
