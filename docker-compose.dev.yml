@@ -125,7 +125,11 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:9000/minio/health/ready || (command -v curl >/dev/null 2>&1 && curl -fsS http://127.0.0.1:9000/minio/health/ready)",
+        ]
       interval: 5s
       timeout: 3s
       retries: 30
