@@ -12,12 +12,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
 	"github.com/hibiken/asynq"
 
 	"github.com/yourname/cleanhttp/internal/artifacts"
 	"github.com/yourname/cleanhttp/internal/config"
 	"github.com/yourname/cleanhttp/internal/exporter"
 	"github.com/yourname/cleanhttp/internal/githubclient"
+	"github.com/yourname/cleanhttp/internal/jobs"
 	"github.com/yourname/cleanhttp/internal/secrets"
 	"github.com/yourname/cleanhttp/internal/store"
 	"github.com/yourname/cleanhttp/internal/storepg"
@@ -120,176 +122,189 @@ func main() {
 	)
 
 	mux := asynq.NewServeMux()
-mux.HandleFunc(taskTypeExport, func(ctx context.Context, t *asynq.Task) error {
-    var p exportPayload
-    if err := json.Unmarshal(t.Payload(), &p); err != nil {
-        return err
-    }
-    if p.ExportID == "" {
-        return fmt.Errorf("empty exportId in payload")
-    }
-    format := strings.ToLower(strings.TrimSpace(p.Format))
-    if format == "" {
-        format = "zip"
-    }
+	mux.HandleFunc(taskTypeExport, func(ctx context.Context, t *asynq.Task) error {
+		var envelope struct {
+			ExportID string          `json:"ExportID"`
+			Payload  json.RawMessage `json:"Payload"`
+		}
+		if err := json.Unmarshal(t.Payload(), &envelope); err != nil {
+			return err
+		}
+		if len(envelope.Payload) == 0 {
+			return fmt.Errorf("empty payload")
+		}
 
-    // mark running
-    expStore.UpdateStatus(p.ExportID, "running", 1, nil)
+		var p exportPayload
+		if err := json.Unmarshal(envelope.Payload, &p); err != nil {
+			return err
+		}
+		if p.ExportID == "" {
+			p.ExportID = envelope.ExportID
+		}
+		if p.ExportID == "" {
+			return fmt.Errorf("empty exportId in payload")
+		}
+		format := strings.ToLower(strings.TrimSpace(p.Format))
+		if format == "" {
+			format = "zip"
+		}
 
-    owner := strings.TrimSpace(p.Owner)
-    repo := strings.TrimSpace(p.Repo)
-    ref := normalizeRef(p.Ref)
+		// mark running
+		expStore.UpdateStatus(p.ExportID, jobs.StatusRunning, 1, nil)
 
-    // 1) скачать tarball из GitHub
-    dctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-    rc, err := gh.GetTarball(dctx, owner, repo, ref)
-    cancel()
-    if err != nil {
-        // Разрулим типичные кейсы: 404/401 → «ресурс не найден / нет доступа»
-        msg := friendlyGhError(err, owner, repo, ref)
-        expStore.UpdateStatus(p.ExportID, "error", 0, &msg)
+		owner := strings.TrimSpace(p.Owner)
+		repo := strings.TrimSpace(p.Repo)
+		ref := normalizeRef(p.Ref)
 
-        // 429/апстрим — возвращаем ошибку, чтобы asynq ретраил
-        if _, ok := err.(*githubclient.RateLimitedError); ok || err == githubclient.ErrUpstream {
-            return err
-        }
-        // остальные ошибки без ретраев
-        return nil
-    }
-    defer rc.Close()
+		// 1) скачать tarball из GitHub
+		dctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		rc, err := gh.GetTarball(dctx, owner, repo, ref)
+		cancel()
+		if err != nil {
+			// Разрулим типичные кейсы: 404/401 → «ресурс не найден / нет доступа»
+			msg := friendlyGhError(err, owner, repo, ref)
+			expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
 
-    // 2) собрать артефакт
-    var (
-        aw      *artifacts.ArtifactWriter
-        meta    artifacts.ArtifactMeta
-        outName string
-    )
+			// 429/апстрим — возвращаем ошибку, чтобы asynq ретраил
+			if _, ok := err.(*githubclient.RateLimitedError); ok || err == githubclient.ErrUpstream {
+				return err
+			}
+			// остальные ошибки без ретраев
+			return nil
+		}
+		defer rc.Close()
 
-    switch format {
-    case "zip":
-        outName = "bundle.zip"
-        aw, meta, err = artStore.CreateArtifact(p.ExportID, "zip", outName)
-        if err != nil {
-            msg := err.Error()
-            expStore.UpdateStatus(p.ExportID, "error", 0, &msg)
-            return nil
-        }
-        opts := exporter.Options{
-            IncludeGlobs:    p.IncludeGlobs,
-            ExcludeGlobs:    p.ExcludeGlobs,
-            MaxBinarySizeMB: p.MaxBinarySizeMB,
-            MaxExportMB:     200,
-            MaxFilenameLen:  255,
-            StripFirstDir:   true,
-        }
-        if err := exporter.BuildZipFromTarGz(rc, aw, opts); err != nil {
-            _ = aw.Close()
-            msg := err.Error()
-            expStore.UpdateStatus(p.ExportID, "error", 0, &msg)
-            return nil
-        }
+		// 2) собрать артефакт
+		var (
+			aw      *artifacts.ArtifactWriter
+			meta    artifacts.ArtifactMeta
+			outName string
+		)
 
-    case "txt":
-        outName = "concat.txt"
-        aw, meta, err = artStore.CreateArtifact(p.ExportID, "txt", outName)
-        if err != nil {
-            msg := err.Error()
-            expStore.UpdateStatus(p.ExportID, "error", 0, &msg)
-            return nil
-        }
-        strat := secrets.StrategyRedacted
-        switch strings.ToLower(p.SecretStrategy) {
-        case "strip":
-            strat = secrets.StrategyStrip
-        case "mark":
-            strat = secrets.StrategyMark
-        }
-        topts := exporter.TxtOptions{
-            IncludeGlobs:    p.IncludeGlobs,
-            ExcludeGlobs:    p.ExcludeGlobs,
-            StripFirstDir:   true,
-            LineNumbers:     true,
-            HeaderTemplate:  "=== FILE: {path} (first {n} lines) ===",
-            MaxLinesPerFile: 10000,
-            MaxExportMB:     200,
-            SkipBinaries:    true,
-            SecretScan:      p.SecretScan,
-            SecretStrategy:  strat,
-        }
-        if err := exporter.BuildTxtFromTarGz(rc, aw, topts); err != nil {
-            _ = aw.Close()
-            msg := err.Error()
-            expStore.UpdateStatus(p.ExportID, "error", 0, &msg)
-            return nil
-        }
+		switch format {
+		case "zip":
+			outName = "bundle.zip"
+			aw, meta, err = artStore.CreateArtifact(p.ExportID, "zip", outName)
+			if err != nil {
+				msg := err.Error()
+				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				return nil
+			}
+			opts := exporter.Options{
+				IncludeGlobs:    p.IncludeGlobs,
+				ExcludeGlobs:    p.ExcludeGlobs,
+				MaxBinarySizeMB: p.MaxBinarySizeMB,
+				MaxExportMB:     200,
+				MaxFilenameLen:  255,
+				StripFirstDir:   true,
+			}
+			if err := exporter.BuildZipFromTarGz(rc, aw, opts); err != nil {
+				_ = aw.Close()
+				msg := err.Error()
+				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				return nil
+			}
 
-    case "promptpack":
-        outName = "promptpack.zip"
-        aw, meta, err = artStore.CreateArtifact(p.ExportID, "zip", outName)
-        if err != nil {
-            msg := err.Error()
-            expStore.UpdateStatus(p.ExportID, "error", 0, &msg)
-            return nil
-        }
-        pp := exporter.PromptPackOptions{
-            Owner:           owner,
-            Repo:            repo,
-            Ref:             ref,
-            Profile:         exporter.Profile(strings.Title(strings.ToLower(p.Profile))),
-            ModelID:         p.TokenModel,
-            IncludeGlobs:    p.IncludeGlobs,
-            ExcludeGlobs:    p.ExcludeGlobs,
-            MaxLinesPerFile: 0,
-            MaskSecrets:     p.SecretScan,
-            StripFirstDir:   true,
-        }
-        if err := exporter.BuildPromptPackFromTarGz(rc, aw, pp); err != nil {
-            _ = aw.Close()
-            msg := err.Error()
-            expStore.UpdateStatus(p.ExportID, "error", 0, &msg)
-            return nil
-        }
+		case "txt":
+			outName = "concat.txt"
+			aw, meta, err = artStore.CreateArtifact(p.ExportID, "txt", outName)
+			if err != nil {
+				msg := err.Error()
+				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				return nil
+			}
+			strat := secrets.StrategyRedacted
+			switch strings.ToLower(p.SecretStrategy) {
+			case "strip":
+				strat = secrets.StrategyStrip
+			case "mark":
+				strat = secrets.StrategyMark
+			}
+			topts := exporter.TxtOptions{
+				IncludeGlobs:    p.IncludeGlobs,
+				ExcludeGlobs:    p.ExcludeGlobs,
+				StripFirstDir:   true,
+				LineNumbers:     true,
+				HeaderTemplate:  "=== FILE: {path} (first {n} lines) ===",
+				MaxLinesPerFile: 10000,
+				MaxExportMB:     200,
+				SkipBinaries:    true,
+				SecretScan:      p.SecretScan,
+				SecretStrategy:  strat,
+			}
+			if err := exporter.BuildTxtFromTarGz(rc, aw, topts); err != nil {
+				_ = aw.Close()
+				msg := err.Error()
+				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				return nil
+			}
 
-    default:
-        msg := "unknown format: " + format
-        expStore.UpdateStatus(p.ExportID, "error", 0, &msg)
-        return nil
-    }
+		case "promptpack":
+			outName = "promptpack.zip"
+			aw, meta, err = artStore.CreateArtifact(p.ExportID, "zip", outName)
+			if err != nil {
+				msg := err.Error()
+				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				return nil
+			}
+			pp := exporter.PromptPackOptions{
+				Owner:           owner,
+				Repo:            repo,
+				Ref:             ref,
+				Profile:         exporter.Profile(strings.Title(strings.ToLower(p.Profile))),
+				ModelID:         p.TokenModel,
+				IncludeGlobs:    p.IncludeGlobs,
+				ExcludeGlobs:    p.ExcludeGlobs,
+				MaxLinesPerFile: 0,
+				MaskSecrets:     p.SecretScan,
+				StripFirstDir:   true,
+			}
+			if err := exporter.BuildPromptPackFromTarGz(rc, aw, pp); err != nil {
+				_ = aw.Close()
+				msg := err.Error()
+				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				return nil
+			}
 
-    // 3) Заливка в хранилище (закрытие writer)
-    if err := aw.Close(); err != nil {
-        msg := err.Error()
-        expStore.UpdateStatus(p.ExportID, "error", 0, &msg)
-        return nil
-    }
+		default:
+			msg := "unknown format: " + format
+			expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+			return nil
+		}
 
-    // 4) Сохраняем метаданные артефакта (для API-редиректа)
-    s3key := path.Join("exports", p.ExportID, outName) // exports/<exportId>/<file>
-    art := store.ArtifactMeta{
-        Name:        outName,
-        Path:        s3key,
-        ContentType: contentTypeFor(format),
-        Size:        meta.Size,
-        ID:          meta.ID,
-        Kind:        meta.Kind,
-    }
-    expStore.AddArtifact(p.ExportID, art)
+		// 3) Заливка в хранилище (закрытие writer)
+		if err := aw.Close(); err != nil {
+			msg := err.Error()
+			expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+			return nil
+		}
 
-    // 5) Готово
-    expStore.SetProgress(p.ExportID, 100)
-    expStore.UpdateStatus(p.ExportID, "done", 100, nil)
+		// 4) Сохраняем метаданные артефакта (для API-редиректа)
+		s3key := path.Join("exports", p.ExportID, outName) // exports/<exportId>/<file>
+		art := store.ArtifactMeta{
+			Name:        outName,
+			Path:        s3key,
+			ContentType: contentTypeFor(format),
+			Size:        meta.Size,
+			ID:          meta.ID,
+			Kind:        meta.Kind,
+		}
+		expStore.AddArtifact(p.ExportID, art)
 
-    slog.Info("export finished",
-        slog.String("export_id", p.ExportID),
-        slog.String("owner", owner),
-        slog.String("repo", repo),
-        slog.String("ref", ref),
-        slog.String("format", format),
-        slog.String("key", s3key),
-    )
-    return nil
-})
+		// 5) Готово
+		expStore.SetProgress(p.ExportID, 100)
+		expStore.UpdateStatus(p.ExportID, jobs.StatusDone, 100, nil)
 
+		slog.Info("export finished",
+			slog.String("export_id", p.ExportID),
+			slog.String("owner", owner),
+			slog.String("repo", repo),
+			slog.String("ref", ref),
+			slog.String("format", format),
+			slog.String("key", s3key),
+		)
+		return nil
+	})
 
 	logger.Info("asynq worker started",
 		slog.String("addr", redisAddr),
@@ -313,29 +328,28 @@ func contentTypeFor(format string) string {
 	}
 }
 
-
 // normalizeRef: "refs/heads/main" → "main", пусто → "HEAD"
 func normalizeRef(ref string) string {
-    r := strings.TrimSpace(ref)
-    if r == "" || strings.EqualFold(r, "default") || strings.EqualFold(r, "latest") {
-        return "HEAD"
-    }
-    r = strings.TrimPrefix(r, "refs/heads/")
-    r = strings.TrimPrefix(r, "heads/")
-    return r
+	r := strings.TrimSpace(ref)
+	if r == "" || strings.EqualFold(r, "default") || strings.EqualFold(r, "latest") {
+		return "HEAD"
+	}
+	r = strings.TrimPrefix(r, "refs/heads/")
+	r = strings.TrimPrefix(r, "heads/")
+	return r
 }
 
 // Преобразуем ошибки GitHub в дружелюбные сообщения на RU
 func friendlyGhError(err error, owner, repo, ref string) string {
-    // если в твоём githubclient есть типы ошибок — используй их.
-    // Здесь просто текстом:
-    e := strings.ToLower(err.Error())
-    switch {
-    case strings.Contains(e, "404"), strings.Contains(e, "not found"):
-        return fmt.Sprintf("Ресурс не найден: %s/%s@%s", owner, repo, ref)
-    case strings.Contains(e, "401"), strings.Contains(e, "unauthorized"), strings.Contains(e, "requires authentication"):
-        return "Нет доступа к репозиторию (нужен GitHub token)"
-    default:
-        return "Ошибка GitHub: " + err.Error()
-    }
+	// если в твоём githubclient есть типы ошибок — используй их.
+	// Здесь просто текстом:
+	e := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(e, "404"), strings.Contains(e, "not found"):
+		return fmt.Sprintf("Ресурс не найден: %s/%s@%s", owner, repo, ref)
+	case strings.Contains(e, "401"), strings.Contains(e, "unauthorized"), strings.Contains(e, "requires authentication"):
+		return "Нет доступа к репозиторию (нужен GitHub token)"
+	default:
+		return "Ошибка GitHub: " + err.Error()
+	}
 }
