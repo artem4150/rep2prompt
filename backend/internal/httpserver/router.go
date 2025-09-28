@@ -55,6 +55,9 @@ func New(cfg config.Config) http.Handler {
 		}
 	}
 	exportsMem := store.NewExportsMemWithRepo("exp", repo)
+	if repo != nil {
+		exportsMem.StartSync(context.Background(), 2*time.Second)
+	}
 	var exportsStore store.ExportsStore = exportsMem
 
 	// Asynq producer

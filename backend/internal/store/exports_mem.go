@@ -83,7 +83,8 @@ type ExportsMem struct {
 	listeners map[string]map[int]chan ExportSnapshot
 	nextSubID int
 
-	repo ExportsRepo // может быть nil: тогда просто in-memory
+	repo        ExportsRepo // может быть nil: тогда просто in-memory
+	syncStarted bool
 }
 
 func NewExportsMem(prefix string) *ExportsMem {
@@ -157,6 +158,9 @@ func (s *ExportsMem) CreateOrReuse(owner, repo, ref string, opts ExportOptions) 
 }
 
 func (s *ExportsMem) Get(id string) (*Export, bool) {
+	if exp, ok := s.syncFromRepo(id); ok {
+		return exp, true
+	}
 	s.mu.RLock()
 	e, ok := s.byID[id]
 	s.mu.RUnlock()
@@ -364,4 +368,180 @@ func (s *ExportsMem) Subscribe(id string) (<-chan ExportSnapshot, func(), bool) 
 		s.mu.Unlock()
 	}
 	return ch, unsubscribe, true
+}
+
+// StartSync запускает фоновые опросы репозитория и синхронизирует статусы
+// экспортов, если хранилище обернуто поверх Postgres.
+func (s *ExportsMem) StartSync(ctx context.Context, interval time.Duration) {
+	if s.repo == nil || interval <= 0 {
+		return
+	}
+	s.mu.Lock()
+	if s.syncStarted {
+		s.mu.Unlock()
+		return
+	}
+	s.syncStarted = true
+	s.mu.Unlock()
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				ids := s.activeExportIDs()
+				for _, id := range ids {
+					s.syncFromRepo(id)
+				}
+			}
+		}
+	}()
+}
+
+func (s *ExportsMem) activeExportIDs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.byID) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(s.byID))
+	for id, exp := range s.byID {
+		if !isTerminal(exp.Status) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func (s *ExportsMem) syncFromRepo(id string) (*Export, bool) {
+	if s.repo == nil {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	exp, ok, err := s.repo.GetByID(ctx, id)
+	if err != nil || !ok {
+		return nil, false
+	}
+
+	var (
+		listeners []chan ExportSnapshot
+		snap      ExportSnapshot
+		result    *Export
+	)
+
+	s.mu.Lock()
+	if local, exists := s.byID[id]; exists {
+		changed := updateExportLocked(local, exp)
+		result = local
+		if changed {
+			snap = snapshotLocked(local)
+			listeners = s.collectListenersLocked(id)
+		}
+	} else {
+		cloned := cloneExport(exp)
+		s.byID[id] = cloned
+		if cloned.Options.IdempotencyKey != "" {
+			if s.byIdem == nil {
+				s.byIdem = make(map[string]string)
+			}
+			s.byIdem[cloned.Options.IdempotencyKey] = cloned.ID
+		}
+		result = cloned
+		snap = snapshotLocked(cloned)
+		listeners = s.collectListenersLocked(id)
+	}
+	s.mu.Unlock()
+
+	if len(listeners) > 0 {
+		s.dispatch(listeners, snap)
+	}
+	return result, true
+}
+
+func updateExportLocked(dst, src *Export) bool {
+	changed := false
+	if dst.Status != src.Status {
+		dst.Status = src.Status
+		changed = true
+	}
+	if dst.Progress != src.Progress {
+		dst.Progress = src.Progress
+		changed = true
+	}
+	if !equalStringPtr(dst.FailureReason, src.FailureReason) {
+		dst.FailureReason = copyStringPtr(src.FailureReason)
+		changed = true
+	}
+	if dst.CancelRequested != src.CancelRequested {
+		dst.CancelRequested = src.CancelRequested
+		changed = true
+	}
+	if !equalTimePtr(dst.StartedAt, src.StartedAt) {
+		dst.StartedAt = copyTimePtr(src.StartedAt)
+		changed = true
+	}
+	if !equalTimePtr(dst.FinishedAt, src.FinishedAt) {
+		dst.FinishedAt = copyTimePtr(src.FinishedAt)
+		changed = true
+	}
+	if len(src.Artifacts) > 0 {
+		if len(dst.Artifacts) != len(src.Artifacts) {
+			dst.Artifacts = append([]ArtifactMeta(nil), src.Artifacts...)
+			changed = true
+		}
+	}
+	return changed
+}
+
+func cloneExport(src *Export) *Export {
+	cloned := *src
+	cloned.FailureReason = copyStringPtr(src.FailureReason)
+	cloned.StartedAt = copyTimePtr(src.StartedAt)
+	cloned.FinishedAt = copyTimePtr(src.FinishedAt)
+	if len(src.Artifacts) > 0 {
+		cloned.Artifacts = append([]ArtifactMeta(nil), src.Artifacts...)
+	}
+	return &cloned
+}
+
+func equalStringPtr(a, b *string) bool {
+	switch {
+	case a == nil && b == nil:
+		return true
+	case a == nil || b == nil:
+		return false
+	default:
+		return *a == *b
+	}
+}
+
+func equalTimePtr(a, b *time.Time) bool {
+	switch {
+	case a == nil && b == nil:
+		return true
+	case a == nil || b == nil:
+		return false
+	default:
+		return a.Equal(*b)
+	}
+}
+
+func copyStringPtr(src *string) *string {
+	if src == nil {
+		return nil
+	}
+	v := *src
+	return &v
+}
+
+func copyTimePtr(src *time.Time) *time.Time {
+	if src == nil {
+		return nil
+	}
+	v := *src
+	return &v
 }
