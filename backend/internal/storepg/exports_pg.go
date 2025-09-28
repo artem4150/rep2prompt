@@ -45,8 +45,8 @@ func (r *ExportsPG) Close() { r.pool.Close() }
 func (r *ExportsPG) CreateOrReuse(ctx context.Context, exp *store.Export) (*store.Export, bool, error) {
 	const q = `
 INSERT INTO exports
-  (id, user_id, project_id, owner, repo, ref, options, status, progress, failure_reason, cancel_requested, created_at, started_at, finished_at, idem_key, profile, format)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,COALESCE($11, NOW()),$12,$13,$14,$15,$16)
+  (id, user_id, project_id, owner, repo, ref, options, status, progress, failure_reason, cancel_requested, idem_key, profile, format)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,$11,$12,$13)
 ON CONFLICT (idem_key) DO UPDATE SET idem_key = excluded.idem_key
 RETURNING id, user_id, project_id, owner, repo, ref, options, status, progress, failure_reason, cancel_requested, created_at, started_at, finished_at, idem_key, profile, format;
 `
@@ -65,7 +65,6 @@ RETURNING id, user_id, project_id, owner, repo, ref, options, status, progress, 
 	row := r.pool.QueryRow(ctx, q,
 		exp.ID, exp.UserID, exp.ProjectID, exp.Owner, exp.Repo, exp.Ref,
 		optsJSON, string(exp.Status), exp.Progress, exp.FailureReason,
-		(*time.Time)(nil), (*time.Time)(nil),
 		exp.Options.IdempotencyKey, exp.Options.Profile, exp.Options.Format,
 	)
 	if err := row.Scan(
@@ -121,7 +120,7 @@ UPDATE exports SET
   progress = $3,
   failure_reason = $4,
   started_at = COALESCE(started_at, CASE WHEN $2 = 'running' THEN NOW() ELSE NULL END),
-  finished_at = CASE WHEN $2 IN ('succeeded','failed','canceled') THEN NOW() ELSE finished_at END
+  finished_at = CASE WHEN $2 IN ('done','error','cancelled') THEN NOW() ELSE finished_at END
 WHERE id = $1`
 	ct, err := r.pool.Exec(ctx, q, id, string(st), progress, failureReason)
 	if err != nil {
