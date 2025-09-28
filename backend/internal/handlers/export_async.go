@@ -18,7 +18,7 @@ type EnqueueOnly interface {
 }
 
 type ExportAsyncHandler struct {
-	Queue   EnqueueOnly          // ← было: jobs.JobsQueue
+	Queue   EnqueueOnly // ← было: jobs.JobsQueue
 	Exports store.ExportsStore
 	GH      *githubclient.Client
 }
@@ -100,6 +100,7 @@ func (h *ExportAsyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{
+		"jobId":    exp.ID,
 		"exportId": exp.ID,
 		"status":   exp.Status,
 	})
