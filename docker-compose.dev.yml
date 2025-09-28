@@ -58,23 +58,25 @@ services:
       - redis
 
   worker:
-    image: golang:1.22
+    image: golang:1.24.3-bookworm    # <-- новая версия Go
     working_dir: /app
     command: ["go", "run", "./cmd/worker"]
     volumes:
       - ./backend:/app
     environment:
+      DATABASE_URL: postgres://app:app@db:5432/app?sslmode=disable
       REDIS_ADDR: redis:6379
-      # REDIS_PASSWORD: ""
       WORKER_CONCURRENCY: "4"
       WORKER_QUEUES: "high=6,default=3,low=1"
-      # Плюс окружение для backend:
-      DATABASE_URL: postgres://app:app@db:5432/app?sslmode=disable
-      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      ENV: dev
+      REQUEST_TIMEOUT: 10s
+      GOTOOLCHAIN: auto               # на будущее — чтобы go сам подтягивал нужный toolchain
     depends_on:
-      - db
-      - redis
-
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
 
 volumes:
   pgdata: {}
