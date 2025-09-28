@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -55,22 +56,59 @@ func NewS3Store(cfg S3Config) (*S3Store, error) {
 		cfg.TTLHours = 72
 	}
 
+	endpoint := strings.TrimSpace(cfg.Endpoint)
+	if endpoint == "" {
+		return nil, errors.New("s3 endpoint is required")
+	}
+
+	useSSL := cfg.UseSSL
+	endpointPrefix := ""
+	if strings.Contains(endpoint, "://") {
+		u, err := url.Parse(endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid s3 endpoint: %w", err)
+		}
+		if u.Host == "" {
+			return nil, errors.New("s3 endpoint must include host")
+		}
+		endpoint = u.Host
+		if u.Scheme == "http" {
+			useSSL = false
+		} else if u.Scheme == "https" {
+			useSSL = true
+		} else if u.Scheme != "" {
+			return nil, fmt.Errorf("unsupported s3 endpoint scheme %q", u.Scheme)
+		}
+		endpointPrefix = strings.Trim(u.Path, "/")
+	}
+
+	if strings.Contains(endpoint, "/") {
+		return nil, errors.New("s3 endpoint must not contain path (use S3_PREFIX for prefixes)")
+	}
+
+	prefix := strings.Trim(cfg.Prefix, "/")
+	if endpointPrefix != "" {
+		if prefix != "" {
+			prefix = path.Join(endpointPrefix, prefix)
+		} else {
+			prefix = endpointPrefix
+		}
+	}
+	if prefix != "" {
+		prefix = strings.Trim(prefix, "/") + "/"
+	}
+
 	opts := &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Secure: cfg.UseSSL,
+		Secure: useSSL,
 	}
 	if cfg.Region != "" {
 		opts.Region = cfg.Region
 	}
 
-	client, err := minio.New(cfg.Endpoint, opts)
+	client, err := minio.New(endpoint, opts)
 	if err != nil {
 		return nil, err
-	}
-
-	prefix := strings.Trim(cfg.Prefix, "/")
-	if prefix != "" {
-		prefix += "/"
 	}
 
 	return &S3Store{
