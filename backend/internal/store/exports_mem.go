@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -122,13 +123,23 @@ func itoa(n int64) string {
 }
 
 func (s *ExportsMem) CreateOrReuse(owner, repo, ref string, opts ExportOptions) (*Export, bool) {
+	key := strings.TrimSpace(opts.IdempotencyKey)
+
 	s.mu.Lock()
-	if id, ok := s.byIdem[opts.IdempotencyKey]; ok {
-		e := s.byID[id]
-		s.mu.Unlock()
-		return e, true
+	if key != "" {
+		if id, ok := s.byIdem[key]; ok {
+			e := s.byID[id]
+			s.mu.Unlock()
+			return e, true
+		}
 	}
+
 	id := s.genID()
+	if key == "" {
+		key = id
+	}
+	opts.IdempotencyKey = key
+
 	now := time.Now().UTC()
 	e := &Export{
 		ID:        id,
@@ -141,7 +152,7 @@ func (s *ExportsMem) CreateOrReuse(owner, repo, ref string, opts ExportOptions) 
 		CreatedAt: now,
 	}
 	s.byID[id] = e
-	s.byIdem[opts.IdempotencyKey] = id
+	s.byIdem[key] = id
 	s.mu.Unlock()
 
 	// write-through → PG
