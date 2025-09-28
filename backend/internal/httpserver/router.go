@@ -13,9 +13,9 @@ import (
 	"github.com/yourname/cleanhttp/internal/githubclient"
 	"github.com/yourname/cleanhttp/internal/handlers"
 	"github.com/yourname/cleanhttp/internal/httputil"
-	"github.com/yourname/cleanhttp/internal/jobs"
+	"github.com/yourname/cleanhttp/internal/jobs/asynqqueue"
 	"github.com/yourname/cleanhttp/internal/store"
-	"github.com/yourname/cleanhttp/internal/worker"
+	"github.com/yourname/cleanhttp/internal/storepg"
 )
 
 func New(cfg config.Config) http.Handler {
@@ -24,14 +24,12 @@ func New(cfg config.Config) http.Handler {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{AddSource: true}))
 	slog.SetDefault(logger)
 
-	// простая главная
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("pong\n"))
 	})
 
-	// healthz
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, http.StatusOK, map[string]any{
 			"ok": true,
@@ -39,56 +37,63 @@ func New(cfg config.Config) http.Handler {
 		})
 	})
 
-	// ========= зависимости для API/воркеров =========
+	// deps
 	gh := githubclient.New(cfg)
 
-	// FS-хранилище артефактов + GC
-	fsStore := artifacts.NewFSStore("./data/artifacts", 72) // TTL 72 часа
-	fsStore.StartGC(nil, 5*time.Minute)                     // периодическая очистка по TTL
-
+	fsStore := artifacts.NewFSStore("./data/artifacts", 72)
+	fsStore.StartGC(nil, 5*time.Minute)
 	var artifactsStore artifacts.ArtifactsStore = fsStore
 
-	exportsDB := store.NewExportsMem("exp")
-	var exportsStore store.ExportsStore = exportsDB
+	var repo store.ExportsRepo
+	if cfg.DatabaseURL != "" {
+		pg, err := storepg.New(context.Background(), cfg.DatabaseURL)
+		if err != nil {
+			slog.Error("postgres connect failed", slog.String("error", err.Error()))
+		} else {
+			repo = pg
+			slog.Info("postgres connected")
+		}
+	}
+	exportsMem := store.NewExportsMemWithRepo("exp", repo)
+	var exportsStore store.ExportsStore = exportsMem
 
-	queue := jobs.NewQueue(128)
-	var jobQueue jobs.JobsQueue = queue
-	runner := worker.NewRunner(worker.Deps{
-		GH:          gh,
-		Store:       artifactsStore,
-		Exports:     exportsStore,
-		MaxAttempts: 3,
-		Logger:      logger.With(slog.String("component", "worker")),
+	// Asynq producer
+	addr := os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		addr = "localhost:6379"
+	}
+	asq, err := asynqqueue.New(asynqqueue.Opts{
+		RedisAddr: addr,
+		Password:  os.Getenv("REDIS_PASSWORD"),
+		QueueHigh: "high",
+		QueueDef:  "default",
+		QueueLow:  "low",
+		Timeout:   30 * time.Minute,
 	})
-	// стартуем воркеров (конкурентность/ретраи можно вынести в cfg/env)
-	go jobQueue.StartWorkers(context.Background(), 4, runner, 3)
+	if err != nil {
+		slog.Error("asynq init failed", slog.String("error", err.Error()))
+	}
 
-	// ========= API =========
 	api := http.NewServeMux()
 
-	// тестовый медленный хендлер
 	api.HandleFunc("/slow", func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(2 * cfg.RequestTimeout)
 		httputil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 
-	// шаг 2–3
 	api.Handle("/repo/resolve", handlers.NewResolveHandler(gh))
 	api.Handle("/repo/tree", handlers.NewTreeHandler(gh, 3*time.Minute))
 	api.Handle("/preview", handlers.NewPreviewHandler(gh))
 
-	// шаг 10: асинхронная постановка экспорта
 	api.Handle("/export", &handlers.ExportAsyncHandler{
-		Queue: jobQueue, Exports: exportsStore, GH: gh,
+		Queue:   asq,          // теперь сигнатура совпадает с jobs.JobsQueue
+		Exports: exportsStore, // ExportsMem (+ write-through в PG)
+		GH:      gh,
 	})
 
-	// список артефактов по exportId
 	api.Handle("/artifacts/", http.StripPrefix("/artifacts", &handlers.ArtifactsListHandler{Store: artifactsStore}))
-
-	// скачивание готового файла (по artifactId)
 	api.Handle("/download/", http.StripPrefix("/download", handlers.NewDownloadHandler(artifactsStore)))
 
-	// статус/отмена задач
 	api.Handle("/jobs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/cancel") && r.Method == http.MethodPost:
@@ -100,16 +105,14 @@ func New(cfg config.Config) http.Handler {
 		}
 	}))
 
-	// монтируем /api/*
 	mux.Handle("/api/", http.StripPrefix("/api", api))
 
-	// ========= middleware-цепочка =========
 	h := http.Handler(mux)
 	h = RequestID()(h)
 	h = Recoverer()(h)
 	h = Timeout(cfg.RequestTimeout)(h)
 	h = Logger()(h)
-	h = CORS(cfg.Env != config.EnvProd)(h) // CORS только вне prod
+	h = CORS(cfg.Env != config.EnvProd)(h)
 
 	return h
 }

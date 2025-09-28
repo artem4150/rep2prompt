@@ -21,6 +21,7 @@ type Config struct{
 	GitHubToken string
 	RequestTimeout time.Duration
 	Env            Env          
+	DatabaseURL    string
 }
 
 func Load() (Config, error){
@@ -29,7 +30,7 @@ func Load() (Config, error){
 		RequestTimeout: 15* time.Second,
 		Env: EnvDev,
 	}
-
+	cfg.DatabaseURL = os.Getenv("DATABASE_URL")
 	if v := os.Getenv("PORT"); v != ""{
 		cfg.Port = v
 	}

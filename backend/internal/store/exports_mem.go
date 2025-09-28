@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -21,13 +23,21 @@ type ExportOptions struct {
 	IdempotencyKey  string
 }
 
+// ArtifactMeta — метаданные артефакта (совместимы с FS/S3 и PG)
 type ArtifactMeta struct {
+	Name        string         // имя файла (видимое пользователю)
+	Path        string         // относительный путь в сторадже (fs/s3)
+	ContentType string         // MIME
+	Size        int64          // байты
+	Checksum    string         // sha256 и т.п.
+	Meta        map[string]any // произвольные метаданные manifest'а
+
+	// опционально — если где-то использовались
 	ID   string
 	Kind string
-	Size int64
 }
 
-// Export — запись «в БД».
+// Export — запись экспорта
 type Export struct {
 	ID        string
 	UserID    string
@@ -50,7 +60,6 @@ type Export struct {
 	FinishedAt *time.Time
 }
 
-// ExportSnapshot — срез состояния для отдачи наружу (API, SSE).
 type ExportSnapshot struct {
 	ID              string
 	Status          jobs.Status
@@ -63,7 +72,8 @@ type ExportSnapshot struct {
 	FinishedAt      *time.Time
 }
 
-// ExportsMem — потокобезопасное in-memory хранилище (MVP).
+// ВАЖНО: интерфейс ExportsRepo объявлён в persist.go
+
 type ExportsMem struct {
 	mu        sync.RWMutex
 	byID      map[string]*Export
@@ -72,6 +82,8 @@ type ExportsMem struct {
 	idPrefix  string
 	listeners map[string]map[int]chan ExportSnapshot
 	nextSubID int
+
+	repo ExportsRepo // может быть nil: тогда просто in-memory
 }
 
 func NewExportsMem(prefix string) *ExportsMem {
@@ -81,6 +93,12 @@ func NewExportsMem(prefix string) *ExportsMem {
 		idPrefix:  prefix,
 		listeners: make(map[string]map[int]chan ExportSnapshot),
 	}
+}
+
+func NewExportsMemWithRepo(prefix string, repo ExportsRepo) *ExportsMem {
+	s := NewExportsMem(prefix)
+	s.repo = repo
+	return s
 }
 
 func (s *ExportsMem) genID() string {
@@ -102,13 +120,12 @@ func itoa(n int64) string {
 	return string(b[i:])
 }
 
-// CreateOrReuse — идемпотентная вставка по idemKey.
-func (s *ExportsMem) CreateOrReuse(owner, repo, ref string, opts ExportOptions) (exp *Export, reused bool) {
+func (s *ExportsMem) CreateOrReuse(owner, repo, ref string, opts ExportOptions) (*Export, bool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if id, ok := s.byIdem[opts.IdempotencyKey]; ok {
-		return s.byID[id], true
+		e := s.byID[id]
+		s.mu.Unlock()
+		return e, true
 	}
 	id := s.genID()
 	now := time.Now().UTC()
@@ -124,13 +141,25 @@ func (s *ExportsMem) CreateOrReuse(owner, repo, ref string, opts ExportOptions) 
 	}
 	s.byID[id] = e
 	s.byIdem[opts.IdempotencyKey] = id
+	s.mu.Unlock()
+
+	// write-through → PG
+	if s.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if _, _, err := s.repo.CreateOrReuse(ctx, e); err != nil {
+			slog.Warn("pg CreateOrReuse failed",
+				slog.String("export_id", e.ID),
+				slog.String("error", err.Error()))
+		}
+	}
 	return e, false
 }
 
 func (s *ExportsMem) Get(id string) (*Export, bool) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	e, ok := s.byID[id]
+	s.mu.RUnlock()
 	return e, ok
 }
 
@@ -159,6 +188,16 @@ func (s *ExportsMem) UpdateStatus(id string, st jobs.Status, progress int, failu
 	}
 	s.mu.Unlock()
 
+	if s.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := s.repo.UpdateStatus(ctx, id, st, progress, failureReason); err != nil {
+			slog.Warn("pg UpdateStatus failed",
+				slog.String("export_id", id),
+				slog.String("error", err.Error()))
+		}
+	}
+
 	s.dispatch(listeners, snap)
 }
 
@@ -177,6 +216,16 @@ func (s *ExportsMem) AddArtifact(id string, art ArtifactMeta) {
 		listeners = s.collectListenersLocked(id)
 	}
 	s.mu.Unlock()
+
+	if s.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := s.repo.AddArtifact(ctx, id, art); err != nil {
+			slog.Warn("pg AddArtifact failed",
+				slog.String("export_id", id),
+				slog.String("error", err.Error()))
+		}
+	}
 
 	s.dispatch(listeners, snap)
 }
@@ -199,6 +248,18 @@ func (s *ExportsMem) RequestCancel(id string) bool {
 	}
 	s.mu.Unlock()
 
+	if updated && s.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if ok, err := s.repo.RequestCancel(ctx, id); err != nil {
+			slog.Warn("pg RequestCancel failed",
+				slog.String("export_id", id),
+				slog.String("error", err.Error()))
+		} else if !ok {
+			// возможно уже помечен
+		}
+	}
+
 	if updated {
 		s.dispatch(listeners, snap)
 	}
@@ -207,9 +268,20 @@ func (s *ExportsMem) RequestCancel(id string) bool {
 
 func (s *ExportsMem) IsCancelRequested(id string) bool {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	if e, ok := s.byID[id]; ok {
-		return e.CancelRequested
+		if e.CancelRequested {
+			s.mu.RUnlock()
+			return true
+		}
+	}
+	s.mu.RUnlock()
+
+	if s.repo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if v, err := s.repo.IsCancelRequested(ctx, id); err == nil && v {
+			return true
+		}
 	}
 	return false
 }
@@ -261,12 +333,10 @@ func (s *ExportsMem) dispatch(listeners []chan ExportSnapshot, snap ExportSnapsh
 		select {
 		case ch <- snap:
 		default:
-			// если потребитель не успевает — пропускаем обновление
 		}
 	}
 }
 
-// Subscribe возвращает канал с обновлениями статуса. Второй возвращаемый аргумент — функция отписки.
 func (s *ExportsMem) Subscribe(id string) (<-chan ExportSnapshot, func(), bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

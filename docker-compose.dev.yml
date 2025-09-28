@@ -1,0 +1,80 @@
+services:
+  db:
+    image: postgres:16
+    container_name: repo2prompt-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  migrate:
+    image: migrate/migrate:4
+    # запусти командой: docker compose run --rm migrate up
+    volumes:
+      - ./backend/migrations:/migrations
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/app?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["migrate", "-path", "/migrations", "-database", "${DATABASE_URL}"]
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    # environment:
+    #   REDIS_PASSWORD: ""   # если нужен пароль — раскомментируй и добавь в конфиги
+
+  asynqmon:
+    image: hibiken/asynqmon:latest
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    environment:
+      REDIS_ADDR: redis:6379
+      # REDIS_PASSWORD: ""   # если включишь пароль
+    depends_on:
+      - redis
+
+  worker:
+    image: golang:1.22
+    working_dir: /app
+    command: ["go", "run", "./cmd/worker"]
+    volumes:
+      - ./backend:/app
+    environment:
+      REDIS_ADDR: redis:6379
+      # REDIS_PASSWORD: ""
+      WORKER_CONCURRENCY: "4"
+      WORKER_QUEUES: "high=6,default=3,low=1"
+      # Плюс окружение для backend:
+      DATABASE_URL: postgres://app:app@db:5432/app?sslmode=disable
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+    depends_on:
+      - db
+      - redis
+
+
+volumes:
+  pgdata: {}

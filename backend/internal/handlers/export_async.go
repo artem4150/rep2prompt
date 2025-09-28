@@ -3,32 +3,31 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
+	"time"
 
 	"github.com/yourname/cleanhttp/internal/githubclient"
-	"github.com/yourname/cleanhttp/internal/httputil"
 	"github.com/yourname/cleanhttp/internal/jobs"
 	"github.com/yourname/cleanhttp/internal/store"
-	"github.com/yourname/cleanhttp/internal/worker"
 )
 
-// Версия экспортера — участвует в idempotency key.
-const exporterVersion = "v0.10.0"
+// EnqueueOnly — локальный минимальный интерфейс для продюсера очереди.
+// Нам не нужен StartWorkers: воркер запускается отдельным процессом.
+type EnqueueOnly interface {
+	Enqueue(p jobs.Priority, t jobs.Task)
+	EnqueueAfter(p jobs.Priority, t jobs.Task, delay time.Duration)
+}
 
-// ExportAsyncHandler — POST /api/export → ставит задачу в очередь и возвращает jobId.
 type ExportAsyncHandler struct {
-	Queue   jobs.JobsQueue
+	Queue   EnqueueOnly          // ← было: jobs.JobsQueue
 	Exports store.ExportsStore
 	GH      *githubclient.Client
 }
 
-// !!! ВАЖНО: имя структуры запросa уникальное для пакета handlers,
-// чтобы не конфликтовать с export.go (sync).
-type exportAsyncReq struct {
+type exportRequest struct {
 	Owner           string   `json:"owner"`
 	Repo            string   `json:"repo"`
 	Ref             string   `json:"ref"`
-	Format          string   `json:"format"` // zip|txt|md
+	Format          string   `json:"format"`
 	Profile         string   `json:"profile"`
 	IncludeGlobs    []string `json:"includeGlobs"`
 	ExcludeGlobs    []string `json:"excludeGlobs"`
@@ -37,91 +36,71 @@ type exportAsyncReq struct {
 	TokenModel      string   `json:"tokenModel"`
 	MaxBinarySizeMB int      `json:"maxBinarySizeMB"`
 	TTLHours        int      `json:"ttlHours"`
-}
-
-type exportRes struct {
-	JobID string `json:"jobId"`
+	IdempotencyKey  string   `json:"idempotencyKey"`
+	Priority        string   `json:"priority"` // "high" | "default" | "low"
 }
 
 func (h *ExportAsyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		httputil.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST", nil)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
-	}
-	var in exportAsyncReq
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		httputil.WriteError(w, http.StatusBadRequest, "bad_request", "invalid JSON", map[string]any{"error": err.Error()})
-		return
-	}
-	if in.Owner == "" || in.Repo == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "bad_request", "owner and repo are required", nil)
-		return
-	}
-	if in.Ref == "" {
-		in.Ref = "main"
-	}
-	if in.Format == "" {
-		in.Format = "zip"
-	}
-	if in.TokenModel == "" {
-		in.TokenModel = "openai:gpt-4o"
-	}
-	if in.TTLHours <= 0 {
-		in.TTLHours = 72
 	}
 
-	// idem-key
-	idem := worker.CalcIdemKey(
-		in.Owner, in.Repo, in.Ref,
-		strings.ToLower(in.Format),
-		strings.ToLower(in.Profile),
-		in.IncludeGlobs, in.ExcludeGlobs,
-		in.SecretScan, strings.ToUpper(in.SecretStrategy),
-		in.TokenModel, exporterVersion,
-	)
+	var req exportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if req.Ref == "" {
+		req.Ref = "main"
+	}
 
-	exp, reused := h.Exports.CreateOrReuse(in.Owner, in.Repo, in.Ref, store.ExportOptions{
-		IncludeGlobs:    in.IncludeGlobs,
-		ExcludeGlobs:    in.ExcludeGlobs,
-		SecretScan:      in.SecretScan,
-		SecretStrategy:  in.SecretStrategy,
-		TokenModel:      in.TokenModel,
-		TTLHours:        in.TTLHours,
-		MaxBinarySizeMB: in.MaxBinarySizeMB,
-		Profile:         strings.ToLower(in.Profile),
-		Format:          strings.ToLower(in.Format),
-		IdempotencyKey:  idem,
+	exp, _ := h.Exports.CreateOrReuse(req.Owner, req.Repo, req.Ref, store.ExportOptions{
+		IncludeGlobs:    req.IncludeGlobs,
+		ExcludeGlobs:    req.ExcludeGlobs,
+		SecretScan:      req.SecretScan,
+		SecretStrategy:  req.SecretStrategy,
+		TokenModel:      req.TokenModel,
+		MaxBinarySizeMB: req.MaxBinarySizeMB,
+		TTLHours:        req.TTLHours,
+		Profile:         req.Profile,
+		Format:          req.Format,
+		IdempotencyKey:  req.IdempotencyKey,
 	})
 
-	// если уже стоит/бежит — просто вернём существующий jobId
-	if reused && (exp.Status == jobs.StatusQueued || exp.Status == jobs.StatusRunning) {
-		httputil.WriteJSON(w, http.StatusOK, exportRes{JobID: exp.ID})
-		return
-	}
-
-	// Ставим новую задачу.
-	p := worker.ExportPayload{
-		ExportID:        exp.ID,
-		Owner:           in.Owner,
-		Repo:            in.Repo,
-		Ref:             in.Ref,
-		Format:          strings.ToLower(in.Format),
-		Profile:         strings.ToLower(in.Profile),
-		IncludeGlobs:    in.IncludeGlobs,
-		ExcludeGlobs:    in.ExcludeGlobs,
-		SecretScan:      in.SecretScan,
-		SecretStrategy:  in.SecretStrategy,
-		TokenModel:      in.TokenModel,
-		MaxBinarySizeMB: in.MaxBinarySizeMB,
-		TTLHours:        in.TTLHours,
-		IdempotencyKey:  idem,
-	}
-	task := jobs.Task{ExportID: exp.ID, Attempt: 0, Payload: p}
 	priority := jobs.Default
-	if p.Format == "txt" || p.Format == "md" { // лёгкие — в high
+	switch req.Priority {
+	case "high":
 		priority = jobs.High
+	case "low":
+		priority = jobs.Low
 	}
-	h.Queue.Enqueue(priority, task)
 
-	httputil.WriteJSON(w, http.StatusOK, exportRes{JobID: exp.ID})
+	// интерфейс без возвратов — просто ставим задачу
+	h.Queue.Enqueue(priority, jobs.Task{
+		ExportID: exp.ID,
+		Attempt:  0,
+		Payload: map[string]any{
+			"exportId":        exp.ID,
+			"owner":           req.Owner,
+			"repo":            req.Repo,
+			"ref":             req.Ref,
+			"format":          req.Format,
+			"profile":         req.Profile,
+			"includeGlobs":    req.IncludeGlobs,
+			"excludeGlobs":    req.ExcludeGlobs,
+			"secretScan":      req.SecretScan,
+			"secretStrategy":  req.SecretStrategy,
+			"tokenModel":      req.TokenModel,
+			"maxBinarySizeMB": req.MaxBinarySizeMB,
+			"ttlHours":        req.TTLHours,
+			"idempotencyKey":  req.IdempotencyKey,
+		},
+	})
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"exportId": exp.ID,
+		"status":   exp.Status,
+	})
 }
