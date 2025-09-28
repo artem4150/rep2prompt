@@ -14,8 +14,6 @@ import (
 	"github.com/yourname/cleanhttp/internal/httputil"
 )
 
-// ExportHandler — синхронный экспорт (оставлен для совместимости).
-// Для production-режима рекомендуем использовать /api/export (async).
 type ExportHandler struct {
 	GH    *githubclient.Client
 	Store artifacts.ArtifactsStore
@@ -41,7 +39,7 @@ type exportReq struct {
 }
 
 type exportResp struct {
-	ID string `json:"id"` // artifactId
+	ID string `json:"id"`
 }
 
 func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -50,11 +48,19 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ограничим размер тела запроса и запретим неизвестные поля —
+	// это снижает риск неожиданностей и DoS большим JSON.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 МБ на параметры более чем достаточно
+
 	var in exportReq
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "bad_request", "invalid JSON body", map[string]any{"error": err.Error()})
 		return
 	}
+
+	// Валидации и дефолты
 	if in.Owner == "" || in.Repo == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "bad_request", "owner and repo are required", nil)
 		return
@@ -65,10 +71,27 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if in.Format == "" {
 		in.Format = "zip"
 	}
+	in.Format = strings.ToLower(in.Format)
+	switch in.Format {
+	case "zip", "txt", "promptpack":
+	default:
+		httputil.WriteError(w, http.StatusBadRequest, "bad_request", "format must be zip|txt|promptpack", nil)
+		return
+	}
+	if in.MaxLinesPerFile <= 0 {
+		in.MaxLinesPerFile = 10000
+	}
+	if in.MaxBinarySizeMB < 0 {
+		in.MaxBinarySizeMB = 0
+	}
+	if in.MaxBinarySizeMB > 100 {
+		in.MaxBinarySizeMB = 100 // мягкий верхний предел на бинарники
+	}
 
-	// 1) Тарболл
+	// 1) Скачиваем tarball из GitHub
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+
 	rc, err := h.GH.GetTarball(ctx, in.Owner, in.Repo, in.Ref)
 	if err != nil {
 		if rl, ok := err.(*githubclient.RateLimitedError); ok {
@@ -88,8 +111,8 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rc.Close()
 
-	// 2) Создаём артефакт и пишем в него
-	switch strings.ToLower(in.Format) {
+	// 2) Генерация выбранного формата
+	switch in.Format {
 	case "zip":
 		aw, meta, err := h.Store.CreateArtifact("sync-"+time.Now().UTC().Format("20060102T150405"), "zip", "bundle.zip")
 		if err != nil {
@@ -127,12 +150,9 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			StripFirstDir:   true,
 			LineNumbers:     true,
 			HeaderTemplate:  "=== FILE: {path} (first {n} lines) ===",
-			MaxLinesPerFile: 10000,
+			MaxLinesPerFile: in.MaxLinesPerFile,
 			MaxExportMB:     200,
 			SkipBinaries:    true,
-		}
-		if in.MaxLinesPerFile > 0 {
-			topts.MaxLinesPerFile = in.MaxLinesPerFile
 		}
 		if err := exporter.BuildTxtFromTarGz(rc, aw, topts); err != nil {
 			httputil.WriteError(w, http.StatusInternalServerError, "internal_error", "failed to build txt", map[string]any{"error": err.Error()})
@@ -161,9 +181,11 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			MaxLinesPerFile: in.MaxLinesPerFile,
 			MaskSecrets:     in.MaskSecrets,
 		}
+
 		if err := exporter.BuildPromptPackFromTarGz(rc, aw, pp); err != nil {
 			var need *exporter.NeedSecondPassError
 			if errors.As(err, &need) {
+				// Для PromptPack нужен второй проход по тарболлу для вырезок
 				rc2, err2 := h.GH.GetTarball(ctx, in.Owner, in.Repo, in.Ref)
 				if err2 != nil {
 					httputil.WriteError(w, http.StatusBadGateway, "upstream_error", "cannot re-fetch tarball for excerpts", map[string]any{"error": err2.Error()})
@@ -183,5 +205,6 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// До сюда не дойдём — формат валидирован выше
 	httputil.WriteError(w, http.StatusBadRequest, "bad_request", "format must be zip|txt|promptpack", nil)
 }

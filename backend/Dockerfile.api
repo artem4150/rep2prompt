@@ -1,0 +1,40 @@
+# ---------- build stage ----------
+FROM golang:1.24 AS build
+WORKDIR /src
+
+# Сначала зависимости — кеш быстрее
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+# Дальше весь код
+COPY backend/ .
+
+# Сборка бинаря API
+# CGO отключаем для облегчения образа
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o /out/api ./cmd/api
+
+# ---------- runtime stage ----------
+FROM alpine:3.20
+# необязательный healthcheck-инструмент
+RUN apk add --no-cache ca-certificates tzdata curl
+
+# Непривилегированный пользователь
+RUN addgroup -S app && adduser -S app -G app
+USER app
+
+WORKDIR /app
+COPY --from=build /out/api /app/api
+
+# Порт API
+EXPOSE 8080
+
+# ENV по умолчанию (можно перекрывать в compose)
+ENV PORT=8080 \
+    ENV=dev \
+    REQUEST_TIMEOUT=15s
+
+# HEALTHCHECK — проверяет /healthz (если у тебя есть такой эндпоинт)
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=10 \
+  CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
+
+ENTRYPOINT ["/app/api"]
