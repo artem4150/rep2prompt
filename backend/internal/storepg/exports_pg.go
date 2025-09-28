@@ -6,8 +6,6 @@ import (
 	"errors"
 	"time"
 
-	
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yourname/cleanhttp/internal/jobs"
 	"github.com/yourname/cleanhttp/internal/store"
@@ -34,6 +32,11 @@ func New(ctx context.Context, dbURL string) (*ExportsPG, error) {
 		pool.Close()
 		return nil, err
 	}
+	if err := ensureSchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
+
 	return &ExportsPG{pool: pool}, nil
 }
 
