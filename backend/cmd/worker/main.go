@@ -64,8 +64,26 @@ func main() {
 	// GH (пока не используем в заглушке)
 	_ = githubclient.New(cfg)
 
-	// FS (пока не используем в заглушке)
-	_ = artifacts.NewFSStore("./data/artifacts", 72)
+	switch strings.ToLower(cfg.ArtifactsBackend) {
+	case "s3":
+		if _, err := artifacts.NewS3Store(artifacts.S3Config{
+			Endpoint:  cfg.S3Endpoint,
+			Region:    cfg.S3Region,
+			Bucket:    cfg.S3Bucket,
+			AccessKey: cfg.S3AccessKey,
+			SecretKey: cfg.S3SecretKey,
+			UseSSL:    cfg.S3UseSSL,
+			Prefix:    cfg.S3Prefix,
+			TTLHours:  cfg.ArtifactsTTLHours,
+		}); err != nil {
+			logger.Error("s3 artifacts store init failed", slog.String("error", err.Error()))
+		} else {
+			logger.Info("artifacts store", slog.String("backend", "s3"))
+		}
+	default:
+		_ = artifacts.NewFSStore(cfg.ArtifactsDir, cfg.ArtifactsTTLHours)
+		logger.Info("artifacts store", slog.String("backend", "fs"))
+	}
 
 	// ExportsMem с write-through в PG
 	expStore := store.NewExportsMemWithRepo("exp", repo)

@@ -40,9 +40,32 @@ func New(cfg config.Config) http.Handler {
 	// deps
 	gh := githubclient.New(cfg)
 
-	fsStore := artifacts.NewFSStore("./data/artifacts", 72)
-	fsStore.StartGC(nil, 5*time.Minute)
-	var artifactsStore artifacts.ArtifactsStore = fsStore
+	var artifactsStore artifacts.ArtifactsStore
+	switch strings.ToLower(cfg.ArtifactsBackend) {
+	case "s3":
+		s3Store, err := artifacts.NewS3Store(artifacts.S3Config{
+			Endpoint:  cfg.S3Endpoint,
+			Region:    cfg.S3Region,
+			Bucket:    cfg.S3Bucket,
+			AccessKey: cfg.S3AccessKey,
+			SecretKey: cfg.S3SecretKey,
+			UseSSL:    cfg.S3UseSSL,
+			Prefix:    cfg.S3Prefix,
+			TTLHours:  cfg.ArtifactsTTLHours,
+		})
+		if err != nil {
+			slog.Error("s3 artifacts store init failed", slog.String("error", err.Error()))
+		} else {
+			artifactsStore = s3Store
+			slog.Info("artifacts store", slog.String("backend", "s3"))
+		}
+	}
+	if artifactsStore == nil {
+		fsStore := artifacts.NewFSStore(cfg.ArtifactsDir, cfg.ArtifactsTTLHours)
+		fsStore.StartGC(nil, 5*time.Minute)
+		artifactsStore = fsStore
+		slog.Info("artifacts store", slog.String("backend", "fs"))
+	}
 
 	var repo store.ExportsRepo
 	if cfg.DatabaseURL != "" {

@@ -60,34 +60,6 @@ func (s *FSStore) IsSafeID(id string) bool { return s.reSafeID.MatchString(id) }
 
 // ===== Создание артефакта =====
 
-// ArtifactWriter — io.WriteCloser, который по Close() обновляет manifest.
-type ArtifactWriter struct {
-	f        *os.File
-	store    *FSStore
-	exportID string
-	meta     ArtifactMeta
-}
-
-// Close закрывает файл и фиксирует размер в manifest.json.
-func (aw *ArtifactWriter) Close() error {
-	if err := aw.f.Close(); err != nil {
-		return err
-	}
-	fi, err := os.Stat(aw.f.Name())
-	if err != nil {
-		return err
-	}
-	aw.meta.Size = fi.Size()
-	return aw.store.updateManifest(aw.exportID, aw.meta)
-}
-
-// Meta возвращает актуальные метаданные артефакта.
-// Дополнительно Close() обновляет размер, поэтому вызывать Meta имеет смысл
-// после успешного закрытия writer.
-func (aw *ArtifactWriter) Meta() ArtifactMeta {
-	return aw.meta
-}
-
 // CreateArtifact создаёт файл <root>/<exportId>/<name> и вернёт writer + метаданные.
 // kind: "zip"|"md"|"txt" — влияет на Content-Type и удобочитаемость.
 // name: имя файла в каталоге exportId (например, "bundle.zip").
@@ -118,7 +90,14 @@ func (s *FSStore) CreateArtifact(exportID, kind, name string) (*ArtifactWriter, 
 		_ = f.Close()
 		return nil, ArtifactMeta{}, err
 	}
-	return &ArtifactWriter{f: f, store: s, exportID: exportID, meta: meta}, meta, nil
+	finalize := func(m ArtifactMeta, size int64) (ArtifactMeta, error) {
+		m.Size = size
+		if err := s.updateManifest(exportID, m); err != nil {
+			return ArtifactMeta{}, err
+		}
+		return m, nil
+	}
+	return newArtifactWriter(f, meta, finalize), meta, nil
 }
 
 // ===== Чтение/листы =====
@@ -306,7 +285,4 @@ func (s *FSStore) gcOnce() {
 func StreamCopy(dst io.Writer, src *os.File) (int64, error) {
 	defer src.Close()
 	return io.Copy(dst, src)
-}
-func (aw *ArtifactWriter) Write(p []byte) (int, error) {
-	return aw.f.Write(p)
 }
