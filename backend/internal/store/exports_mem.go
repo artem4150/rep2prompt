@@ -184,9 +184,17 @@ func (s *ExportsMem) UpdateStatus(id string, st jobs.Status, progress int, failu
 
 	s.mu.Lock()
 	if e, ok := s.byID[id]; ok {
+		prevProgress := e.Progress
 		e.Status = st
 		if progress >= 0 {
-			e.Progress = progress
+			switch st {
+			case jobs.StatusError, jobs.StatusCancelled:
+				if progress >= prevProgress {
+					e.Progress = progress
+				}
+			default:
+				e.Progress = progress
+			}
 		}
 		e.FailureReason = failureReason
 		now := time.Now().UTC()

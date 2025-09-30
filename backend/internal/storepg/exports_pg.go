@@ -117,7 +117,11 @@ func (r *ExportsPG) UpdateStatus(ctx context.Context, id string, st jobs.Status,
 	const q = `
 UPDATE exports SET
   status = $2,
-  progress = $3,
+  progress = CASE
+                WHEN $3 < 0 THEN progress
+                WHEN $2 IN ('error','cancelled') AND $3 < progress THEN progress
+                ELSE $3
+             END,
   failure_reason = $4,
   started_at = COALESCE(started_at, CASE WHEN $2 = 'running' THEN NOW() ELSE NULL END),
   finished_at = CASE WHEN $2 IN ('done','error','cancelled') THEN NOW() ELSE finished_at END
