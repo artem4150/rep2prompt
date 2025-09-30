@@ -66,6 +66,7 @@ services:
       REQUEST_TIMEOUT: 15s
       DATABASE_URL: postgres://rep2prompt:rep2prompt@postgres:5432/rep2prompt?sslmode=disable
       REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
       ARTIFACTS_DIR: /data/artifacts
       ARTIFACTS_BACKEND: s3
       S3_ENDPOINT: http://minio:9000
@@ -100,6 +101,7 @@ services:
       S3_USE_SSL: "false"
       DATABASE_URL: postgres://rep2prompt:rep2prompt@postgres:5432/rep2prompt?sslmode=disable
       REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
       WORKER_CONCURRENCY: "4"
       WORKER_QUEUES: "high=6,default=3,low=1"
       ARTIFACTS_DIR: /data/artifacts

@@ -25,8 +25,6 @@ import (
 	"github.com/yourname/cleanhttp/internal/storepg"
 )
 
-const taskTypeExport = "export:run"
-
 func env(key, def string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
@@ -110,10 +108,23 @@ func main() {
 	qcfg := map[string]int{}
 	for _, part := range strings.Split(queuesSpec, ",") {
 		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
-		if len(kv) == 2 {
-			w, _ := strconv.Atoi(kv[1])
-			qcfg[kv[0]] = w
+		if len(kv) != 2 {
+			continue
 		}
+		name := strings.TrimSpace(kv[0])
+		if name == "" {
+			continue
+		}
+		weight, err := strconv.Atoi(kv[1])
+		if err != nil || weight <= 0 {
+			continue
+		}
+		qcfg[name] = weight
+	}
+	if len(qcfg) == 0 {
+		qcfg = map[string]int{"high": 6, "default": 3, "low": 1}
+	} else if weight, ok := qcfg["high"]; !ok || weight <= 0 {
+		qcfg["high"] = 6
 	}
 
 	srv := asynq.NewServer(
@@ -122,28 +133,34 @@ func main() {
 	)
 
 	mux := asynq.NewServeMux()
-	mux.HandleFunc(taskTypeExport, func(ctx context.Context, t *asynq.Task) error {
+	mux.HandleFunc(jobs.TaskTypeExport, func(ctx context.Context, t *asynq.Task) error {
 		var envelope struct {
 			ExportID string          `json:"ExportID"`
 			Payload  json.RawMessage `json:"Payload"`
 		}
 		if err := json.Unmarshal(t.Payload(), &envelope); err != nil {
+			logger.Error("export task envelope decode failed", slog.Any("error", err))
 			return err
 		}
 		if len(envelope.Payload) == 0 {
+			logger.Error("export task payload empty", slog.String("export_id", envelope.ExportID))
 			return fmt.Errorf("empty payload")
 		}
 
 		var p exportPayload
 		if err := json.Unmarshal(envelope.Payload, &p); err != nil {
+			logger.Error("export task payload decode failed", slog.Any("error", err))
 			return err
 		}
 		if p.ExportID == "" {
 			p.ExportID = envelope.ExportID
 		}
 		if p.ExportID == "" {
+			logger.Error("export task missing export_id")
 			return fmt.Errorf("empty exportId in payload")
 		}
+		jobLog := logger.With(slog.String("export_id", p.ExportID))
+
 		format := strings.ToLower(strings.TrimSpace(p.Format))
 		if format == "" {
 			format = "zip"
@@ -155,6 +172,13 @@ func main() {
 		owner := strings.TrimSpace(p.Owner)
 		repo := strings.TrimSpace(p.Repo)
 		ref := normalizeRef(p.Ref)
+		jobLog = jobLog.With(
+			slog.String("owner", owner),
+			slog.String("repo", repo),
+			slog.String("ref", ref),
+			slog.String("format", format),
+		)
+		jobLog.Info("export task received")
 
 		// 1) скачать tarball из GitHub
 		dctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
@@ -164,6 +188,7 @@ func main() {
 			// Разрулим типичные кейсы: 404/401 → «ресурс не найден / нет доступа»
 			msg := friendlyGhError(err, owner, repo, ref)
 			expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+			jobLog.Error("github tarball download failed", slog.Any("error", err))
 
 			// 429/апстрим — возвращаем ошибку, чтобы asynq ретраил
 			if _, ok := err.(*githubclient.RateLimitedError); ok || err == githubclient.ErrUpstream {
@@ -188,6 +213,7 @@ func main() {
 			if err != nil {
 				msg := err.Error()
 				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				jobLog.Error("create zip artifact failed", slog.Any("error", err))
 				return nil
 			}
 			opts := exporter.Options{
@@ -202,6 +228,7 @@ func main() {
 				_ = aw.Close()
 				msg := err.Error()
 				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				jobLog.Error("build zip artifact failed", slog.Any("error", err))
 				return nil
 			}
 
@@ -211,6 +238,7 @@ func main() {
 			if err != nil {
 				msg := err.Error()
 				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				jobLog.Error("create txt artifact failed", slog.Any("error", err))
 				return nil
 			}
 			strat := secrets.StrategyRedacted
@@ -236,6 +264,7 @@ func main() {
 				_ = aw.Close()
 				msg := err.Error()
 				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				jobLog.Error("build txt artifact failed", slog.Any("error", err))
 				return nil
 			}
 
@@ -245,6 +274,7 @@ func main() {
 			if err != nil {
 				msg := err.Error()
 				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				jobLog.Error("create promptpack artifact failed", slog.Any("error", err))
 				return nil
 			}
 			pp := exporter.PromptPackOptions{
@@ -263,12 +293,14 @@ func main() {
 				_ = aw.Close()
 				msg := err.Error()
 				expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+				jobLog.Error("build promptpack artifact failed", slog.Any("error", err))
 				return nil
 			}
 
 		default:
 			msg := "unknown format: " + format
 			expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+			jobLog.Error("unknown export format", slog.String("format", format))
 			return nil
 		}
 
@@ -276,6 +308,7 @@ func main() {
 		if err := aw.Close(); err != nil {
 			msg := err.Error()
 			expStore.UpdateStatus(p.ExportID, jobs.StatusError, 0, &msg)
+			jobLog.Error("finalize artifact failed", slog.Any("error", err))
 			return nil
 		}
 
@@ -295,14 +328,7 @@ func main() {
 		expStore.SetProgress(p.ExportID, 100)
 		expStore.UpdateStatus(p.ExportID, jobs.StatusDone, 100, nil)
 
-		slog.Info("export finished",
-			slog.String("export_id", p.ExportID),
-			slog.String("owner", owner),
-			slog.String("repo", repo),
-			slog.String("ref", ref),
-			slog.String("format", format),
-			slog.String("key", s3key),
-		)
+		jobLog.Info("export finished", slog.String("key", s3key))
 		return nil
 	})
 

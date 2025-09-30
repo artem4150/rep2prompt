@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -84,21 +83,7 @@ func New(cfg config.Config) http.Handler {
 	var exportsStore store.ExportsStore = exportsMem
 
 	// Asynq producer
-	addr := os.Getenv("REDIS_ADDR")
-	if addr == "" {
-		addr = "localhost:6379"
-	}
-	asq, err := asynqqueue.New(asynqqueue.Opts{
-		RedisAddr: addr,
-		Password:  os.Getenv("REDIS_PASSWORD"),
-		QueueHigh: "high",
-		QueueDef:  "default",
-		QueueLow:  "low",
-		Timeout:   30 * time.Minute,
-	})
-	if err != nil {
-		slog.Error("asynq init failed", slog.String("error", err.Error()))
-	}
+	asqClient := asynqqueue.NewClient()
 
 	api := http.NewServeMux()
 
@@ -112,9 +97,10 @@ func New(cfg config.Config) http.Handler {
 	api.Handle("/preview", handlers.NewPreviewHandler(gh))
 
 	api.Handle("/export", &handlers.ExportAsyncHandler{
-		Queue:   asq,          // теперь сигнатура совпадает с jobs.JobsQueue
-		Exports: exportsStore, // ExportsMem (+ write-through в PG)
+		Queue:   asqClient,
+		Exports: exportsStore,
 		GH:      gh,
+		Logger:  logger.With(slog.String("component", "api_export")),
 	})
 
 	api.Handle("/artifacts/", http.StripPrefix("/artifacts", &handlers.ArtifactsListHandler{Store: artifactsStore}))
