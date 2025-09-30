@@ -167,7 +167,12 @@ func main() {
 		// 1) скачать tarball из GitHub
 		dctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		rc, err := gh.GetTarball(dctx, owner, repo, ref)
-		cancel()
+		if err != nil {
+			cancel()
+		} else {
+			// Отменяем контекст после завершения обработки tarball (закроется в defer).
+			defer cancel()
+		}
 		if err != nil {
 			// Разрулим типичные кейсы: 404/401 → «ресурс не найден / нет доступа»
 			msg := friendlyGhError(err, owner, repo, ref)
