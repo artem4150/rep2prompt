@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const TaskTypeExport = "export:run"
+
 // Status — состояния задачи экспорта (из спецификации шага 10).
 type Status string
 

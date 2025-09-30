@@ -2,25 +2,34 @@ package handlers
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
-	"time"
+	"strings"
+
+	"github.com/hibiken/asynq"
 
 	"github.com/yourname/cleanhttp/internal/githubclient"
+	"github.com/yourname/cleanhttp/internal/httputil"
 	"github.com/yourname/cleanhttp/internal/jobs"
 	"github.com/yourname/cleanhttp/internal/store"
 )
 
-// EnqueueOnly — локальный минимальный интерфейс для продюсера очереди.
-// Нам не нужен StartWorkers: воркер запускается отдельным процессом.
-type EnqueueOnly interface {
-	Enqueue(p jobs.Priority, t jobs.Task)
-	EnqueueAfter(p jobs.Priority, t jobs.Task, delay time.Duration)
+type TaskEnqueuer interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
 type ExportAsyncHandler struct {
-	Queue   EnqueueOnly // ← было: jobs.JobsQueue
+	Queue   TaskEnqueuer
 	Exports store.ExportsStore
 	GH      *githubclient.Client
+	Logger  *slog.Logger
+}
+
+func (h *ExportAsyncHandler) logger() *slog.Logger {
+	if h.Logger != nil {
+		return h.Logger
+	}
+	return slog.Default()
 }
 
 type exportRequest struct {
@@ -47,7 +56,7 @@ func (h *ExportAsyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req exportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httputil.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -68,38 +77,98 @@ func (h *ExportAsyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		IdempotencyKey:  req.IdempotencyKey,
 	})
 
-	priority := jobs.Default
-	switch req.Priority {
-	case "high":
-		priority = jobs.High
+	queueName := "high"
+	switch strings.ToLower(strings.TrimSpace(req.Priority)) {
+	case "default":
+		queueName = "default"
 	case "low":
-		priority = jobs.Low
+		queueName = "low"
+	case "high":
+		queueName = "high"
 	}
 
-	// интерфейс без возвратов — просто ставим задачу
-	h.Queue.Enqueue(priority, jobs.Task{
-		ExportID: exp.ID,
-		Attempt:  0,
-		Payload: map[string]any{
-			"exportId":        exp.ID,
-			"owner":           req.Owner,
-			"repo":            req.Repo,
-			"ref":             req.Ref,
-			"format":          req.Format,
-			"profile":         req.Profile,
-			"includeGlobs":    req.IncludeGlobs,
-			"excludeGlobs":    req.ExcludeGlobs,
-			"secretScan":      req.SecretScan,
-			"secretStrategy":  req.SecretStrategy,
-			"tokenModel":      req.TokenModel,
-			"maxBinarySizeMB": req.MaxBinarySizeMB,
-			"ttlHours":        req.TTLHours,
-			"idempotencyKey":  req.IdempotencyKey,
-		},
-	})
+	payload := struct {
+		ExportID        string   `json:"exportId"`
+		Owner           string   `json:"owner"`
+		Repo            string   `json:"repo"`
+		Ref             string   `json:"ref"`
+		Format          string   `json:"format"`
+		Profile         string   `json:"profile"`
+		IncludeGlobs    []string `json:"includeGlobs"`
+		ExcludeGlobs    []string `json:"excludeGlobs"`
+		SecretScan      bool     `json:"secretScan"`
+		SecretStrategy  string   `json:"secretStrategy"`
+		TokenModel      string   `json:"tokenModel"`
+		MaxBinarySizeMB int      `json:"maxBinarySizeMB"`
+		TTLHours        int      `json:"ttlHours"`
+		IdempotencyKey  string   `json:"idempotencyKey"`
+	}{
+		ExportID:        exp.ID,
+		Owner:           req.Owner,
+		Repo:            req.Repo,
+		Ref:             req.Ref,
+		Format:          req.Format,
+		Profile:         req.Profile,
+		IncludeGlobs:    req.IncludeGlobs,
+		ExcludeGlobs:    req.ExcludeGlobs,
+		SecretScan:      req.SecretScan,
+		SecretStrategy:  req.SecretStrategy,
+		TokenModel:      req.TokenModel,
+		MaxBinarySizeMB: req.MaxBinarySizeMB,
+		TTLHours:        req.TTLHours,
+		IdempotencyKey:  req.IdempotencyKey,
+	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		h.logger().Error("marshal export payload failed",
+			slog.String("export_id", exp.ID),
+			slog.Any("error", err),
+		)
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"code":    "payload_encode_failed",
+			"message": "failed to prepare export payload",
+		})
+		return
+	}
+
+	if h.Queue == nil {
+		h.logger().Error("enqueue export failed",
+			slog.String("export_id", exp.ID),
+			slog.String("queue", queueName),
+			slog.String("reason", "queue_not_configured"),
+		)
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"code":    "enqueue_failed",
+			"message": "failed to enqueue task",
+		})
+		return
+	}
+
+	task := asynq.NewTask(jobs.TaskTypeExport, payloadBytes, asynq.Queue(queueName))
+	info, err := h.Queue.Enqueue(task)
+	if err != nil {
+		h.logger().Error("enqueue export failed",
+			slog.String("export_id", exp.ID),
+			slog.String("queue", queueName),
+			slog.Int("payload_size", len(payloadBytes)),
+			slog.Any("error", err),
+		)
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"code":    "enqueue_failed",
+			"message": "failed to enqueue task",
+		})
+		return
+	}
+
+	h.logger().Info("export enqueued",
+		slog.String("export_id", exp.ID),
+		slog.String("queue", info.Queue),
+		slog.String("task_id", info.ID),
+		slog.Int("payload_size", len(payloadBytes)),
+	)
+
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"jobId":    exp.ID,
 		"exportId": exp.ID,
 		"status":   exp.Status,
