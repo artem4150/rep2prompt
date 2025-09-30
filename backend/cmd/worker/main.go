@@ -134,26 +134,10 @@ func main() {
 
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(jobs.TaskTypeExport, func(ctx context.Context, t *asynq.Task) error {
-		var envelope struct {
-			ExportID string          `json:"ExportID"`
-			Payload  json.RawMessage `json:"Payload"`
-		}
-		if err := json.Unmarshal(t.Payload(), &envelope); err != nil {
-			logger.Error("export task envelope decode failed", slog.Any("error", err))
-			return err
-		}
-		if len(envelope.Payload) == 0 {
-			logger.Error("export task payload empty", slog.String("export_id", envelope.ExportID))
-			return fmt.Errorf("empty payload")
-		}
-
 		var p exportPayload
-		if err := json.Unmarshal(envelope.Payload, &p); err != nil {
+		if err := json.Unmarshal(t.Payload(), &p); err != nil {
 			logger.Error("export task payload decode failed", slog.Any("error", err))
 			return err
-		}
-		if p.ExportID == "" {
-			p.ExportID = envelope.ExportID
 		}
 		if p.ExportID == "" {
 			logger.Error("export task missing export_id")
