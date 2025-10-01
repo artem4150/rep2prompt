@@ -1,0 +1,18 @@
+﻿apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rep2prompt-rules
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: rep2prompt-general
+      rules:
+        - alert: HighJobFailures
+          expr: increase(asynq_jobs_failed_total[5m]) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            description: "Слишком много упавших задач Asynq за 5 минут"

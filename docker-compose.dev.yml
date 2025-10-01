@@ -166,7 +166,80 @@ services:
       echo "MinIO bucket ready."
     restart: "no"
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+      - worker
+      - redis
+      - postgres
+    networks: [default]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks: [default]
+
+  redis_exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    command: ["--redis.addr=redis://redis:6379"]
+    ports: ["9121:9121"]
+    depends_on: [redis]
+    networks: [default]
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    environment:
+      - DATA_SOURCE_NAME=postgresql://rep2prompt:rep2prompt@postgres:5432/rep2prompt?sslmode=disable
+    ports: ["9187:9187"]
+    depends_on: [postgres]
+    networks: [default]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    ports: ["8084:8080"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks: [default]
+
+  loki:
+    image: grafana/loki:2.9.8
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./infra/observability/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+    ports: ["3100:3100"]
+    networks: [default]
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./infra/observability/promtail/config.yml:/etc/promtail/config.yml:ro
+    depends_on: [loki]
+    networks: [default]
+
 volumes:
   pgdata: {}
   minio_data: {}
   artifactsdata: {}
+  grafana_data:
