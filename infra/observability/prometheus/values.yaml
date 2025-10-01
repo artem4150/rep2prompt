@@ -1,0 +1,24 @@
+# Пример values для kube-prometheus-stack
+# Используйте как основу и подставьте свои значения.
+
+alertmanager:
+  alertmanagerSpec:
+    configSecret: alertmanager-config
+
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+grafana:
+  adminPassword: prom-operator
+  grafana.ini:
+    server:
+      root_url: http://localhost:3000
+    auth:
+      disable_login_form: false
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.logging.svc:3100
