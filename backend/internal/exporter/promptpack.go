@@ -61,7 +61,7 @@ type packState struct {
 	owner, repo, ref string
 	profile          Profile
 	nowUTC           time.Time
-	stripFirstDir bool
+	stripFirstDir    bool
 	// секции
 	summary, treeMD, depsMD, envMD, prompts bytes.Buffer
 
@@ -226,7 +226,10 @@ func BuildPromptPackFromTarGz(src io.Reader, dst io.Writer, opts PromptPackOptio
 	if headroom < 1000 {
 		headroom = 1000
 	}
-	st.mainMaxTokens = headroom
+	// mainMaxTokens хранит полный лимит токенов для основного файла (секции + врезки).
+	// Ранее мы сохраняли только headroom, из-за чего mainUsedTokens (равный preTokens)
+	// всегда превышал лимит и все блоки уходили в чанки, а секция 06_EXCERPTS оставалась пустой.
+	st.mainMaxTokens = preTokens + headroom
 
 	// 4) второй проход — врезки
 	return &NeedSecondPassError{state: st, zw: zw, opts: opts}
@@ -704,7 +707,6 @@ func (st *packState) renderExcerptsAndWriteZip(tr *tar.Reader, zw *zip.Writer) e
 	return nil
 }
 
-
 // ===== Утилиты и парсеры =====
 
 func isReadme(p string) bool {
@@ -1101,4 +1103,3 @@ func (st *packState) renderPrompts() {
 	fmt.Fprintln(b, "- Q&A: «Отвечай на вопросы по модулю X, цитируя пути и строки из врезок.»")
 	fmt.Fprintln(b)
 }
-
