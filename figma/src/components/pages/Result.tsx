@@ -4,6 +4,7 @@ import { ArtifactsList } from '../molecules/ArtifactsList';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
 import { CheckCircle2, Plus } from 'lucide-react';
+import { ArtifactFile } from '../../lib/types';
 
 export const Result: React.FC = () => {
   const { language, setCurrentPage } = useAppContext();
@@ -27,27 +28,27 @@ export const Result: React.FC = () => {
 
   const t = texts[language];
 
-  const mockArtifacts = [
+  const mockArtifacts: ArtifactFile[] = [
     {
       id: '1',
       name: 'PromptPack-Short.md',
-      type: 'md' as const,
-      size: '128 KB',
-      url: '#',
+      kind: 'md',
+      size: 131072,
+      downloadUrl: '#',
     },
     {
-      id: '2', 
+      id: '2',
       name: 'Export.zip',
-      type: 'zip' as const,
-      size: '14.2 MB',
-      url: '#',
+      kind: 'zip',
+      size: 14876672,
+      downloadUrl: '#',
     },
     {
       id: '3',
       name: 'Concat.txt',
-      type: 'txt' as const,
-      size: '1.3 MB', 
-      url: '#',
+      kind: 'txt',
+      size: 1363149,
+      downloadUrl: '#',
     },
   ];
 
