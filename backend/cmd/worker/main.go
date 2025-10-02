@@ -145,10 +145,7 @@ func main() {
 		}
 		jobLog := logger.With(slog.String("export_id", p.ExportID))
 
-		format := strings.ToLower(strings.TrimSpace(p.Format))
-		if format == "" {
-			format = "zip"
-		}
+		format := normalizeFormat(p.Format)
 
 		// mark running
 		expStore.UpdateStatus(p.ExportID, jobs.StatusRunning, 1, nil)
@@ -352,6 +349,17 @@ func normalizeRef(ref string) string {
 	r = strings.TrimPrefix(r, "refs/heads/")
 	r = strings.TrimPrefix(r, "heads/")
 	return r
+}
+
+func normalizeFormat(format string) string {
+	f := strings.ToLower(strings.TrimSpace(format))
+	if f == "" {
+		return "zip"
+	}
+	if f == "md" {
+		return "promptpack"
+	}
+	return f
 }
 
 // Преобразуем ошибки GitHub в дружелюбные сообщения на RU

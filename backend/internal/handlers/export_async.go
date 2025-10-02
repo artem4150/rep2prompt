@@ -63,6 +63,14 @@ func (h *ExportAsyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if req.Ref == "" {
 		req.Ref = "main"
 	}
+	format := strings.ToLower(strings.TrimSpace(req.Format))
+	if format == "" {
+		format = "zip"
+	}
+	if format == "md" {
+		format = "promptpack"
+	}
+	req.Format = format
 
 	exp, _ := h.Exports.CreateOrReuse(req.Owner, req.Repo, req.Ref, store.ExportOptions{
 		IncludeGlobs:    req.IncludeGlobs,

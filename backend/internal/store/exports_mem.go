@@ -20,7 +20,7 @@ type ExportOptions struct {
 	TTLHours        int
 	MaxBinarySizeMB int
 	Profile         string // short|full|rag
-	Format          string // zip|md|txt
+	Format          string // zip|txt|promptpack (md legacy alias)
 	IdempotencyKey  string
 }
 
