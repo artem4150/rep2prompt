@@ -1,6 +1,29 @@
 export type Theme = 'light' | 'dark';
-export type Page = 'landing' | 'analyze' | 'select' | 'export' | 'jobs' | 'result';
+export type Page =
+  | 'landing'
+  | 'signin'
+  | 'dashboard'
+  | 'exports'
+  | 'export-new'
+  | 'export-details'
+  | 'profiles'
+  | 'compare'
+  | 'dependencies'
+  | 'onboarding'
+  | 'workspaces'
+  | 'settings'
+  | 'analyze'
+  | 'select'
+  | 'export'
+  | 'jobs'
+  | 'result';
 export type Language = 'ru' | 'en';
+
+export interface User {
+  name: string;
+  email: string;
+  avatar?: string;
+}
 
 export interface RepoData {
   url: string;
