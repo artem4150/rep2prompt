@@ -71,7 +71,10 @@ func (h *ExportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if in.Format == "" {
 		in.Format = "zip"
 	}
-	in.Format = strings.ToLower(in.Format)
+	in.Format = strings.ToLower(strings.TrimSpace(in.Format))
+	if in.Format == "md" {
+		in.Format = "promptpack"
+	}
 	switch in.Format {
 	case "zip", "txt", "promptpack":
 	default:

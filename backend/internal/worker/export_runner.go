@@ -66,13 +66,15 @@ func NewRunner(d Deps) jobs.Runner {
 			slog.String("owner", p.Owner),
 			slog.String("repo", p.Repo),
 			slog.String("ref", p.Ref),
-			slog.String("format", strings.ToLower(p.Format)),
+			slog.String("format", strings.ToLower(strings.TrimSpace(p.Format))),
 			slog.String("profile", p.Profile),
 		)
 
+		format := normalizeFormat(p.Format)
+
 		// Создаём writer для артефакта (FSStore.CreateArtifact)
-		fileName := artifactFileName(p)
-		aw, meta, err := d.Store.CreateArtifact(p.ExportID, strings.ToLower(p.Format), fileName)
+		fileName := artifactFileName(format)
+		aw, meta, err := d.Store.CreateArtifact(p.ExportID, format, fileName)
 		if err != nil {
 			jobLog.Error("cannot create artifact writer", slog.String("file", fileName), slog.String("error", err.Error()))
 			d.Exports.UpdateStatus(p.ExportID, jobs.StatusError, 0, strPtr("artifact_write_failed"))
@@ -217,7 +219,7 @@ func NewRunner(d Deps) jobs.Runner {
 			return nil
 		}
 
-		switch strings.ToLower(p.Format) {
+		switch format {
 		case "zip":
 			opts := exporter.Options{
 				IncludeGlobs:    p.IncludeGlobs,
@@ -350,7 +352,7 @@ func loggerFor(lg *slog.Logger, p ExportPayload, attempt int) *slog.Logger {
 		slog.String("exportId", p.ExportID),
 		slog.String("idemKey", p.IdempotencyKey),
 		slog.Int("attempt", attempt+1),
-		slog.String("format", strings.ToLower(p.Format)),
+		slog.String("format", strings.ToLower(strings.TrimSpace(p.Format))),
 		slog.String("profile", p.Profile),
 	)
 	if p.Owner != "" {
@@ -426,14 +428,25 @@ func promptPackProfile(profile string) exporter.Profile {
 	}
 }
 
+func normalizeFormat(format string) string {
+	f := strings.ToLower(strings.TrimSpace(format))
+	if f == "" {
+		return "zip"
+	}
+	if f == "promptpack" {
+		return "md"
+	}
+	return f
+}
+
 // artifactFileName — безопасное имя файла артефакта.
-func artifactFileName(p ExportPayload) string {
-	switch strings.ToLower(p.Format) {
+func artifactFileName(format string) string {
+	switch format {
 	case "zip":
 		return "bundle.zip"
 	case "txt":
 		return "bundle.txt"
-	case "md": // Prompt Pack собирается в архив
+	case "md", "promptpack":
 		return "promptpack.zip"
 	default:
 		return "artifact.bin"
