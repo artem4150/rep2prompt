@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../../App';
+import { Link } from 'react-router-dom';
 import { RepoInputCard } from '../molecules/RepoInputCard';
 import { Github, Filter, Download } from 'lucide-react';
+import { Button } from '../ui/button';
 
 export const Landing: React.FC = () => {
   const { language } = useAppContext();
@@ -44,7 +46,13 @@ export const Landing: React.FC = () => {
           <p className="text-xl text-muted-foreground mb-12 max-w-3xl mx-auto">
             {t.subtitle}
           </p>
-          
+
+          <div className="flex flex-wrap items-center justify-center gap-4 mb-10">
+            <Button asChild size="lg" className="px-8">
+              <Link to="/signin">Войти / Зарегистрироваться</Link>
+            </Button>
+          </div>
+
           <div className="max-w-2xl mx-auto">
             <RepoInputCard />
           </div>

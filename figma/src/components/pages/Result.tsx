@@ -1,74 +1,55 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useAppContext } from '../../App';
 import { ArtifactsList } from '../molecules/ArtifactsList';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
 import { CheckCircle2, Plus } from 'lucide-react';
-import { QuickTextExport } from '../molecules/QuickTextExport';
 
 export const Result: React.FC = () => {
-  const {
-    language,
-    setCurrentPage,
-    artifacts,
-    artifactsExpiresAt,
-    setCurrentJob,
-    setArtifacts,
-    setArtifactsExpiresAt,
-    setSelectedPaths,
-    setTreeItems,
-  } = useAppContext();
+  const { language, setCurrentPage } = useAppContext();
 
   const texts = {
     ru: {
       title: 'Готово!',
       description: 'Ваш экспорт успешно создан',
-      ttlWarning: (ts: string) => `Ссылки истекут ${ts}`,
+      ttlWarning: 'Ссылки истекут через 72 часа',
       createAnother: 'Создать ещё',
       backToStart: 'К началу',
-      empty: 'Артефакты недоступны. Попробуйте выполнить экспорт ещё раз.',
     },
     en: {
       title: 'Done!',
       description: 'Your export has been created successfully',
-      ttlWarning: (ts: string) => `Links will expire ${ts}`,
+      ttlWarning: 'Links will expire in 72 hours',
       createAnother: 'Create another',
       backToStart: 'Back to start',
-      empty: 'Artifacts are not available. Try exporting again.',
     },
   };
 
   const t = texts[language];
 
-  const expiresAtText = useMemo(() => {
-    if (!artifactsExpiresAt) {
-      return null;
-    }
-    const date = new Date(artifactsExpiresAt);
-    return t.ttlWarning(date.toLocaleString());
-  }, [artifactsExpiresAt, t]);
-
-  const handleReset = () => {
-    setCurrentJob(null);
-    setArtifacts([]);
-    setArtifactsExpiresAt(null);
-    setSelectedPaths([]);
-    setTreeItems([]);
-    setCurrentPage('landing');
-  };
-
-  const handleCreateAnother = () => {
-    setSelectedPaths([]);
-    setCurrentPage('select');
-  };
-
-  const quickArtifact = useMemo(() => {
-    const txtArtifact = artifacts.find((artifact) => artifact.kind === 'txt');
-    if (txtArtifact) {
-      return txtArtifact;
-    }
-    return artifacts.find((artifact) => artifact.kind === 'md');
-  }, [artifacts]);
+  const mockArtifacts = [
+    {
+      id: '1',
+      name: 'PromptPack-Short.md',
+      type: 'md' as const,
+      size: '128 KB',
+      url: '#',
+    },
+    {
+      id: '2', 
+      name: 'Export.zip',
+      type: 'zip' as const,
+      size: '14.2 MB',
+      url: '#',
+    },
+    {
+      id: '3',
+      name: 'Concat.txt',
+      type: 'txt' as const,
+      size: '1.3 MB', 
+      url: '#',
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-background">
@@ -82,46 +63,31 @@ export const Result: React.FC = () => {
         </div>
 
         <div className="space-y-6">
-          {expiresAtText && (
-            <Alert>
-              <AlertDescription>{expiresAtText}</AlertDescription>
-            </Alert>
-          )}
+          <Alert>
+            <AlertDescription>
+              {t.ttlWarning}
+            </AlertDescription>
+          </Alert>
 
-          {artifacts.length > 0 ? (
-            <>
-              
-              <ArtifactsList artifacts={artifacts} />
-              
-            </>
-          ) : (
-            <Alert variant="destructive">
-              <AlertDescription>{t.empty}</AlertDescription>
-            </Alert>
-          )}
+          <ArtifactsList artifacts={mockArtifacts} />
 
           <div className="flex justify-center gap-4 pt-6">
-            <Button
+            <Button 
               variant="outline"
-              onClick={handleReset}
+              onClick={() => setCurrentPage('landing')}
             >
               {t.backToStart}
             </Button>
-            <Button
-              onClick={handleCreateAnother}
+            <Button 
+              onClick={() => setCurrentPage('select')}
               className="gap-2"
-              disabled={artifacts.length === 0}
             >
               <Plus className="w-4 h-4" />
               {t.createAnother}
             </Button>
-            
           </div>
-              {quickArtifact && <QuickTextExport artifact={quickArtifact} />}
         </div>
-        
       </div>
-      
     </div>
   );
 };
