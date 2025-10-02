@@ -61,5 +61,9 @@ figma/yarn-error.log*
 figma/pnpm-debug.log*
 figma/build/
 
+# --- Auth service (Node) ---
+backend/auth/node_modules/
+backend/auth/.env
+
 # --- Ненужные системные файлы в подкаталогах ---
 **/.DS_Store
