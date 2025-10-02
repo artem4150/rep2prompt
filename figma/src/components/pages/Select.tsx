@@ -1,13 +1,33 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { useAppContext } from '../../App';
 import { TreeSelector } from '../organisms/TreeSelector';
 import { Button } from '../ui/button';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
+import { formatBytes } from '../../lib/utils';
 
 export const Select: React.FC = () => {
-  const { language, setCurrentPage } = useAppContext();
-  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const [selectedSize, setSelectedSize] = useState('18 MB');
+  const {
+    language,
+    setCurrentPage,
+    selectedPaths,
+    setSelectedPaths,
+    treeItems,
+    repoData,
+  } = useAppContext();
+
+  const selectedSize = useMemo(() => {
+    if (!selectedPaths.length) {
+      return '0 B';
+    }
+    const sizeByPath = new Map<string, number>();
+    treeItems.forEach(item => {
+      if (item.type === 'file') {
+        sizeByPath.set(item.path, item.size);
+      }
+    });
+    const totalBytes = selectedPaths.reduce((total, path) => total + (sizeByPath.get(path) ?? 0), 0);
+    return formatBytes(totalBytes);
+  }, [selectedPaths, treeItems]);
 
   const texts = {
     ru: {
@@ -28,6 +48,25 @@ export const Select: React.FC = () => {
 
   const t = texts[language];
 
+  if (!repoData) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-4 py-8 max-w-3xl">
+          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-10 text-center">
+            <p className="text-lg text-muted-foreground">
+              {language === 'ru'
+                ? 'Сначала укажите репозиторий на главной странице.'
+                : 'Please resolve a repository on the landing page first.'}
+            </p>
+            <Button className="mt-6" onClick={() => setCurrentPage('landing')}>
+              {language === 'ru' ? 'На главную' : 'Go to landing'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-7xl">
@@ -44,21 +83,21 @@ export const Select: React.FC = () => {
         </div>
 
         <div className="space-y-6">
-          <TreeSelector 
-            selectedFiles={selectedFiles}
-            onSelectionChange={setSelectedFiles}
+          <TreeSelector
+            selectedFiles={selectedPaths}
+            onSelectionChange={setSelectedPaths}
           />
 
           <div className="flex items-center justify-between pt-6 border-t border-border">
             <div className="text-muted-foreground">
-              {t.selected}: {selectedFiles.length} {t.files} (~{selectedSize})
+              {t.selected}: {selectedPaths.length} {t.files} (~{selectedSize})
             </div>
-            
-            <Button 
+
+            <Button
               onClick={() => setCurrentPage('export')}
               className="gap-2"
               size="lg"
-              disabled={selectedFiles.length === 0}
+              disabled={selectedPaths.length === 0}
             >
               {t.next}
               <ArrowRight className="w-4 h-4" />

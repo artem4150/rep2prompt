@@ -8,7 +8,8 @@ import { Checkbox } from '../ui/checkbox';
 import { Badge } from '../ui/badge';
 import { ScrollArea } from '../ui/scroll-area';
 import { Separator } from '../ui/separator';
-import { Search, Folder, File, FolderOpen, RefreshCw } from 'lucide-react';
+import { Alert, AlertDescription } from '../ui/alert';
+import { Search, Folder, File, FolderOpen, RefreshCw, AlertCircle } from 'lucide-react';
 import { formatBytes } from '../../lib/utils';
 import { TreeItem } from '../../lib/types';
 import { collectFilePaths, createGlobMatcher, filterTreeByGlobs } from '../../lib/glob';
@@ -34,6 +35,8 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
     treeItems,
     treeLoading,
     repoData,
+    treeSource,
+    treeError,
     loadTree,
     includeMasks,
     excludeMasks,
@@ -65,6 +68,34 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
   };
 
   const t = texts[language];
+
+  useEffect(() => {
+    if (!repoData) {
+      return;
+    }
+
+    const { owner, repo, currentRef } = repoData;
+    const matchesCurrentSource =
+      treeSource &&
+      treeSource.owner === owner &&
+      treeSource.repo === repo &&
+      treeSource.ref === currentRef;
+
+    if (!matchesCurrentSource || treeItems.length === 0) {
+      loadTree(owner, repo, currentRef).catch(() => {
+        /* error is surfaced via treeError */
+      });
+    }
+  }, [
+    repoData?.owner,
+    repoData?.repo,
+    repoData?.currentRef,
+    treeSource?.owner,
+    treeSource?.repo,
+    treeSource?.ref,
+    treeItems.length,
+    loadTree,
+  ]);
 
   const tree = useMemo(() => {
     if (!treeItems.length) {
@@ -393,6 +424,13 @@ export const TreeSelector: React.FC<TreeSelectorProps> = ({ selectedFiles, onSel
   return (
     <div className="grid lg:grid-cols-2 gap-6">
       <div className="space-y-4">
+        {treeError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{treeError}</AlertDescription>
+          </Alert>
+        )}
+
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
