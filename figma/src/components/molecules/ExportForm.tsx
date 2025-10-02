@@ -11,6 +11,7 @@ import { Separator } from '../ui/separator';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Play, Settings, FileArchive, FileText, File, Loader2 } from 'lucide-react';
 import { ApiError, createExport } from '../../lib/api';
+import { ExportFormat } from '../../lib/types';
 import { getFriendlyApiError } from '../../lib/errors';
 
 export const ExportForm: React.FC = () => {
@@ -25,8 +26,9 @@ export const ExportForm: React.FC = () => {
     setCurrentJob,
     setArtifacts,
     setArtifactsExpiresAt,
+    setLastExportFormat,
   } = useAppContext();
-  const [format, setFormat] = useState('md');
+  const [format, setFormat] = useState<ExportFormat>('md');
   const [profile, setProfile] = useState('short');
   const [secretScan, setSecretScan] = useState(true);
   const [tokenModel, setTokenModel] = useState('openai');
@@ -117,7 +119,7 @@ export const ExportForm: React.FC = () => {
       owner: repoData.owner,
       repo: repoData.repo,
       ref: repoData.currentRef,
-      format: format as 'zip' | 'md' | 'txt',
+      format,
       profile,
       includeGlobs,
       excludeGlobs,
@@ -130,7 +132,8 @@ export const ExportForm: React.FC = () => {
       .then((resp) => {
         setArtifacts([]);
         setArtifactsExpiresAt(null);
-        setCurrentJob({ id: resp.jobId, state: 'queued', progress: 0 });
+        setLastExportFormat(format);
+        setCurrentJob({ id: resp.jobId, state: 'queued', progress: 0, format });
         setCurrentPage('jobs');
       })
       .catch((err) => {
@@ -156,7 +159,10 @@ export const ExportForm: React.FC = () => {
           {/* Format Selection */}
           <div className="space-y-3">
             <Label className="text-base font-medium">{t.format}</Label>
-            <RadioGroup value={format} onValueChange={setFormat}>
+            <RadioGroup
+              value={format}
+              onValueChange={(value) => setFormat(value as ExportFormat)}
+            >
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="zip" id="zip" />
                 <Label htmlFor="zip" className="flex items-center gap-2">
