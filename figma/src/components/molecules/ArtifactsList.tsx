@@ -11,6 +11,8 @@ interface ArtifactsListProps {
   artifacts: ArtifactFile[];
 }
 
+const normalizeType = (type?: string) => type?.toLowerCase() ?? 'other';
+
 export const ArtifactsList: React.FC<ArtifactsListProps> = ({ artifacts }) => {
   const { language } = useAppContext();
 
@@ -29,8 +31,8 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ artifacts }) => {
 
   const t = texts[language];
 
-  const getFileIcon = (type: string) => {
-    switch (type) {
+  const getFileIcon = (type?: string) => {
+    switch (normalizeType(type)) {
       case 'zip':
         return <FileArchive className="w-5 h-5 text-orange-500" />;
       case 'md':
@@ -42,21 +44,26 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ artifacts }) => {
     }
   };
 
-  const getFileTypeBadge = (type: string) => {
+  const getFileTypeBadge = (type?: string) => {
+    const normalizedType = normalizeType(type);
     const colors = {
       zip: 'bg-orange-100 text-orange-800',
       md: 'bg-blue-100 text-blue-800',
       txt: 'bg-gray-100 text-gray-800',
+      other: 'bg-gray-100 text-gray-800',
     };
 
     return (
-      <Badge variant="secondary" className={colors[type as keyof typeof colors] ?? 'bg-gray-100 text-gray-800'}>
-        {type.toUpperCase()}
+      <Badge variant="secondary" className={colors[normalizedType as keyof typeof colors] ?? colors.other}>
+        {normalizedType.toUpperCase()}
       </Badge>
     );
   };
 
   const handleDownload = (artifact: ArtifactFile) => {
+    if (!artifact.downloadUrl) {
+      return;
+    }
     window.open(artifact.downloadUrl, '_blank', 'noopener');
   };
 
