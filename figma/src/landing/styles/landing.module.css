@@ -1,4 +1,4 @@
-:where(.landing-root) {
+.landingRoot {
   --landing-font-family: "Inter", "SF Pro Display", "Segoe UI", system-ui, -apple-system, sans-serif;
   --landing-bg: #f8fafc;
   --landing-surface: rgba(255, 255, 255, 0.92);
@@ -26,20 +26,20 @@
   overflow-x: hidden;
 }
 
-:where(.landing-root) * {
+.landingRoot * {
   box-sizing: border-box;
 }
 
-:where(.landing-root) a {
+.landingRoot a {
   color: inherit;
   text-decoration: none;
 }
 
-:where(.landing-root) p {
+.landingRoot p {
   color: var(--landing-muted);
 }
 
-:where(.landing-root.landing-dark) {
+.landingDark {
   --landing-bg: #0b1220;
   --landing-surface: rgba(15, 23, 42, 0.92);
   --landing-subtle: rgba(30, 41, 59, 0.6);
