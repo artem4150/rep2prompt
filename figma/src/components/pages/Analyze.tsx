@@ -28,6 +28,8 @@ export const Analyze: React.FC = () => {
     return null;
   }
 
+  const hasStats = Boolean(repoData.stats);
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
@@ -35,11 +37,11 @@ export const Analyze: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold mb-2">{t.title}</h1>
             <p className="text-muted-foreground">
-              {repoData.owner}/{repoData.name}
+              {repoData.owner}/{repoData.repo}
             </p>
           </div>
-          
-          <Button 
+
+          <Button
             variant="ghost" 
             onClick={() => setCurrentPage('landing')}
             className="gap-2"
@@ -51,11 +53,30 @@ export const Analyze: React.FC = () => {
 
         <div className="space-y-6">
           <RefSelector />
-          
-          <AnalyticsSummary stats={repoData.stats} />
-          
+
+          {hasStats ? (
+            <AnalyticsSummary stats={repoData.stats!} />
+          ) : (
+            <div className="grid md:grid-cols-3 gap-6">
+              {[0, 1, 2].map((index) => (
+                <div
+                  key={index}
+                  className="rounded-lg border border-dashed border-border bg-muted/40 p-6 text-sm text-muted-foreground"
+                >
+                  <div className="h-4 w-24 rounded bg-muted mb-3 animate-pulse" />
+                  <div className="h-8 w-32 rounded bg-muted animate-pulse" />
+                  <p className="mt-4 text-xs">
+                    {language === 'ru'
+                      ? 'Статистика будет доступна после первого анализа.'
+                      : 'Statistics will appear after the initial analysis.'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
           {repoData.warnings?.length > 0 && (
-            <WarningBanner 
+            <WarningBanner
               type="warning"
               title="Найдены предупреждения"
               warnings={repoData.warnings}
