@@ -40,6 +40,7 @@ import {
   Language,
   Page,
   RepoData,
+  ExportFormat,
   Theme,
   TreeItem,
   User,
@@ -61,6 +62,7 @@ interface AppContextType {
   currentJob: JobState | null;
   artifacts: ArtifactFile[];
   artifactsExpiresAt: string | null;
+  lastExportFormat: ExportFormat | null;
   user: User | null;
   isAuthenticated: boolean;
   setTheme: (theme: Theme) => void;
@@ -78,6 +80,7 @@ interface AppContextType {
   setCurrentJob: React.Dispatch<React.SetStateAction<JobState | null>>;
   setArtifacts: React.Dispatch<React.SetStateAction<ArtifactFile[]>>;
   setArtifactsExpiresAt: React.Dispatch<React.SetStateAction<string | null>>;
+  setLastExportFormat: React.Dispatch<React.SetStateAction<ExportFormat | null>>;
   loadTree: (
     owner: string,
     repo: string,
@@ -167,6 +170,9 @@ export default function App() {
   const [currentJob, setCurrentJob] = useState<JobState | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactFile[]>([]);
   const [artifactsExpiresAt, setArtifactsExpiresAt] = useState<string | null>(
+    null,
+  );
+  const [lastExportFormat, setLastExportFormat] = useState<ExportFormat | null>(
     null,
   );
   const [user, setUser] = useState<User | null>(null);
@@ -263,6 +269,7 @@ export default function App() {
       currentJob,
       artifacts,
       artifactsExpiresAt,
+      lastExportFormat,
       user,
       isAuthenticated,
       setTheme,
@@ -278,6 +285,7 @@ export default function App() {
       setCurrentJob,
       setArtifacts,
       setArtifactsExpiresAt,
+      setLastExportFormat,
       loadTree,
       login,
       logout,
@@ -298,6 +306,7 @@ export default function App() {
       currentJob,
       artifacts,
       artifactsExpiresAt,
+      lastExportFormat,
       user,
       isAuthenticated,
       setCurrentPage,

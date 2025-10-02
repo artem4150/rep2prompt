@@ -1,6 +1,8 @@
 import {
   ApiErrorPayload,
   ArtifactsResponse,
+  ArtifactFile,
+  ArtifactMeta,
   ExportRequest,
   ExportResponse,
   JobStatusResponse,
@@ -104,6 +106,28 @@ export const listArtifacts = (exportId: string): Promise<ArtifactsResponse> =>
   request<ArtifactsResponse>(`/api/artifacts/${encodeURIComponent(exportId)}`);
 
 export const getDownloadUrl = (artifactId: string): string => buildUrl(`/api/download/${encodeURIComponent(artifactId)}`);
+
+export const artifactMetaToFile = (meta: ArtifactMeta): ArtifactFile | null => {
+  if (!meta.id) {
+    return null;
+  }
+  return {
+    id: meta.id,
+    kind: meta.kind,
+    name: meta.name,
+    size: meta.size,
+    downloadUrl: getDownloadUrl(meta.id),
+  };
+};
+
+export const artifactsMetaToFiles = (artifacts: ArtifactMeta[] | undefined | null): ArtifactFile[] => {
+  if (!artifacts?.length) {
+    return [];
+  }
+  return artifacts
+    .map(artifactMetaToFile)
+    .filter((file): file is ArtifactFile => Boolean(file));
+};
 
 export const subscribeToJob = (
   jobId: string,

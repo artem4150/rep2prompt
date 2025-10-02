@@ -74,11 +74,13 @@ export interface PreviewResponse {
   truncated: boolean;
 }
 
+export type ExportFormat = 'zip' | 'md' | 'txt';
+
 export interface ExportRequest {
   owner: string;
   repo: string;
   ref: string;
-  format: 'zip' | 'md' | 'txt';
+  format: ExportFormat;
   profile: string;
   includeGlobs: string[];
   excludeGlobs: string[];
@@ -95,12 +97,23 @@ export interface ExportResponse {
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 
+export interface ArtifactMeta {
+  id?: string;
+  kind?: string;
+  name: string;
+  size?: number;
+  path?: string;
+  contentType?: string;
+  checksum?: string;
+  meta?: Record<string, unknown>;
+}
+
 export interface JobStatusResponse {
   state: JobStatus;
   progress: number;
   error?: string | null;
   exportId?: string;
-  artifacts?: Array<{ id: string; kind: string; size: number }>;
+  artifacts?: ArtifactMeta[];
   failureReason?: string | null;
   cancelRequested?: boolean;
 }
@@ -113,18 +126,20 @@ export interface JobState {
   exportId?: string;
   failureReason?: string | null;
   cancelRequested?: boolean;
+  artifacts?: ArtifactMeta[];
+  format?: ExportFormat;
 }
 
 export interface ArtifactFile {
   id: string;
-  kind: string;
+  kind?: string;
   name: string;
-  size: number;
+  size?: number;
   downloadUrl: string;
 }
 
 export interface ArtifactsResponse {
-  files: Array<{ id: string; kind: string; name: string; size: number }>;
+  files: ArtifactMeta[];
   expiresAt: string;
 }
 

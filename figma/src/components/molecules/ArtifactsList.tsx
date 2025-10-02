@@ -9,11 +9,15 @@ import { ArtifactFile } from '../../lib/types';
 
 interface ArtifactsListProps {
   artifacts: ArtifactFile[];
+  primaryArtifactId?: string | null;
 }
 
 const normalizeType = (type?: string) => type?.toLowerCase() ?? 'other';
 
-export const ArtifactsList: React.FC<ArtifactsListProps> = ({ artifacts }) => {
+export const ArtifactsList: React.FC<ArtifactsListProps> = ({
+  artifacts,
+  primaryArtifactId,
+}) => {
   const { language } = useAppContext();
 
   const texts = {
@@ -21,11 +25,13 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ artifacts }) => {
       title: 'Готовые файлы',
       download: 'Скачать',
       totalSize: 'Общий размер',
+      primary: 'Выбранный формат',
     },
     en: {
       title: 'Ready Files',
       download: 'Download',
       totalSize: 'Total size',
+      primary: 'Selected format',
     },
   };
 
@@ -64,7 +70,15 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ artifacts }) => {
     if (!artifact.downloadUrl) {
       return;
     }
-    window.open(artifact.downloadUrl, '_blank', 'noopener');
+    const link = document.createElement('a');
+    link.href = artifact.downloadUrl;
+    if (artifact.name) {
+      link.setAttribute('download', artifact.name);
+    }
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const totalSize = artifacts.reduce((acc, artifact) => acc + (artifact.size ?? 0), 0);
@@ -81,18 +95,29 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ artifacts }) => {
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {artifacts.map((artifact) => (
-            <div
-              key={artifact.id}
-              className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-            >
+          {artifacts.map((artifact) => {
+            const isPrimary = primaryArtifactId != null && artifact.id === primaryArtifactId;
+            return (
+              <div
+                key={artifact.id}
+                className={`flex items-center justify-between p-4 rounded-lg border transition-colors ${
+                  isPrimary
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'hover:bg-muted/50'
+                }`}
+              >
               <div className="flex items-center gap-3">
                 {getFileIcon(artifact.kind)}
                 <div>
                   <h4 className="font-medium">{artifact.name}</h4>
                   <div className="flex items-center gap-2 mt-1">
                     {getFileTypeBadge(artifact.kind)}
-                    <span className="text-sm text-muted-foreground">{formatBytes(artifact.size)}</span>
+                    <span className="text-sm text-muted-foreground">{formatBytes(artifact.size ?? 0)}</span>
+                    {isPrimary && (
+                      <Badge variant="default" className="bg-primary text-primary-foreground">
+                        {t.primary}
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </div>
@@ -100,12 +125,14 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ artifacts }) => {
               <Button
                 onClick={() => handleDownload(artifact)}
                 className="gap-2"
+                disabled={!artifact.downloadUrl}
               >
                 <Download className="w-4 h-4" />
                 {t.download}
               </Button>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
