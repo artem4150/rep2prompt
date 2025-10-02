@@ -1,0 +1,1006 @@
+:where(.landing-root) {
+  --landing-font-family: "Inter", "SF Pro Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --landing-bg: #f8fafc;
+  --landing-surface: rgba(255, 255, 255, 0.92);
+  --landing-subtle: rgba(255, 255, 255, 0.7);
+  --landing-text: #0f172a;
+  --landing-muted: #475569;
+  --landing-border: rgba(148, 163, 184, 0.35);
+  --landing-primary: #6366f1;
+  --landing-primary-strong: #4f46e5;
+  --landing-success: #10b981;
+  --landing-warning: #f59e0b;
+  --landing-error: #ef4444;
+  --landing-shadow-lg: 0 25px 45px rgba(99, 102, 241, 0.12);
+  --landing-shadow-card: 0 16px 40px rgba(15, 23, 42, 0.08);
+  --landing-radius-lg: 24px;
+  --landing-radius-xl: 32px;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.12), transparent 55%),
+    radial-gradient(circle at 80% 10%, rgba(99, 102, 241, 0.08), transparent 60%),
+    var(--landing-bg);
+  color: var(--landing-text);
+  font-family: var(--landing-font-family);
+  transition: background-color 0.4s ease, color 0.4s ease;
+  position: relative;
+  overflow-x: hidden;
+}
+
+:where(.landing-root) * {
+  box-sizing: border-box;
+}
+
+:where(.landing-root) a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:where(.landing-root) p {
+  color: var(--landing-muted);
+}
+
+:where(.landing-root.landing-dark) {
+  --landing-bg: #0b1220;
+  --landing-surface: rgba(15, 23, 42, 0.92);
+  --landing-subtle: rgba(30, 41, 59, 0.6);
+  --landing-text: #f8fafc;
+  --landing-muted: #cbd5f5;
+  --landing-border: rgba(148, 163, 184, 0.25);
+  --landing-shadow-lg: 0 35px 60px rgba(15, 23, 42, 0.55);
+  --landing-shadow-card: 0 22px 50px rgba(15, 23, 42, 0.65);
+}
+
+.landingMain {
+  padding-top: 88px;
+}
+
+.landingSection {
+  padding: clamp(3rem, 8vw, 6rem) clamp(1.5rem, 7vw, 5rem);
+}
+
+.landingSectionNarrow {
+  padding: clamp(2.5rem, 6vw, 4.5rem) clamp(1.5rem, 7vw, 5rem);
+}
+
+.landingContainer {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+}
+
+/* Header */
+.landingHeader {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 72px;
+  background: color-mix(in srgb, var(--landing-surface) 92%, transparent);
+  border-bottom: 1px solid var(--landing-border);
+  backdrop-filter: blur(18px);
+  z-index: 20;
+  animation: landing-fade-in-down 0.6s ease;
+}
+
+.landingHeaderInner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0 clamp(1.5rem, 7vw, 5rem);
+  width: min(1200px, 100%);
+  margin: 0 auto;
+}
+
+.landingBrand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.landingBrandMark {
+  width: 42px;
+  height: 42px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--landing-primary), var(--landing-primary-strong));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: var(--landing-shadow-lg);
+}
+
+.landingBrandName {
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+
+.landingHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.landingIconButton {
+  border-radius: 16px !important;
+  background-color: transparent;
+  color: var(--landing-text);
+  border: 1px solid color-mix(in srgb, var(--landing-border) 65%, transparent);
+  width: 44px;
+  height: 44px;
+  transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.landingIconButton:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--landing-primary) 60%, transparent);
+  background-color: color-mix(in srgb, var(--landing-primary) 12%, transparent);
+}
+
+.landingAuthButton {
+  position: relative;
+  border-radius: 18px !important;
+  padding-inline: clamp(1.75rem, 4vw, 2.5rem) !important;
+  height: 44px;
+  background-image: linear-gradient(135deg, var(--landing-primary), var(--landing-primary-strong));
+  box-shadow: var(--landing-shadow-lg);
+  overflow: hidden;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.landingAuthButton::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: landing-shimmer 2.8s ease-in-out infinite;
+  transform: translateX(-100%);
+}
+
+.landingAuthButton span {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Hero */
+.landingHero {
+  position: relative;
+  padding: clamp(6rem, 14vw, 9rem) clamp(1.5rem, 7vw, 5rem) clamp(3.5rem, 10vw, 6rem);
+  overflow: hidden;
+}
+
+.landingHeroBackground,
+.landingHeroGlow {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999px;
+  filter: blur(90px);
+  opacity: 0.45;
+  animation: landing-glow 10s ease-in-out infinite;
+}
+
+.landingHeroBackground {
+  top: -40%;
+  right: -25%;
+  width: 640px;
+  height: 640px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.35), transparent 70%);
+}
+
+.landingHeroGlow {
+  bottom: -35%;
+  left: -20%;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.3), transparent 72%);
+  animation-delay: 2s;
+}
+
+.landingHeroInner {
+  position: relative;
+  z-index: 1;
+  width: min(1200px, 100%);
+  margin: 0 auto;
+  text-align: center;
+}
+
+.landingHeroBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--landing-primary) 40%, transparent);
+  background: color-mix(in srgb, var(--landing-primary) 12%, transparent);
+  color: var(--landing-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 2rem;
+  animation: landing-fade-in-up 0.6s ease;
+}
+
+.landingHeroTitle {
+  font-size: clamp(2.75rem, 6vw, 4rem);
+  line-height: 1.1;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  animation: landing-fade-in-up 0.7s ease;
+}
+
+.landingHeroHighlight {
+  background: linear-gradient(120deg, var(--landing-primary), var(--landing-primary-strong));
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.landingHeroSubtitle {
+  font-size: clamp(1.05rem, 2.3vw, 1.25rem);
+  max-width: 680px;
+  margin: 0 auto 2.5rem;
+  animation: landing-fade-in-up 0.8s ease;
+}
+
+.landingHeroCard {
+  position: relative;
+  border-radius: var(--landing-radius-xl);
+  border: 1px solid var(--landing-border);
+  background: var(--landing-surface);
+  padding: clamp(1.75rem, 5vw, 2.5rem);
+  box-shadow: var(--landing-shadow-card);
+  overflow: hidden;
+}
+
+.landingHeroCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  opacity: 0;
+  animation: landing-shimmer 5s ease-in-out infinite;
+  animation-delay: 1.2s;
+}
+
+.landingHeroCardContent {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.landingHeroField {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+
+.landingHeroInputWrapper {
+  position: relative;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.landingHeroInput {
+  height: 56px;
+  border-radius: 18px !important;
+  border: 1px solid var(--landing-border) !important;
+  background: var(--landing-subtle) !important;
+  padding-left: 3.25rem !important;
+  font-size: 1rem;
+  color: var(--landing-text);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.landingHeroInput:focus-visible {
+  border-color: color-mix(in srgb, var(--landing-primary) 80%, transparent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--landing-primary) 18%, transparent);
+}
+
+.landingHeroInputIcon {
+  position: absolute;
+  inset: 0 auto 0 1.25rem;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  color: color-mix(in srgb, var(--landing-muted) 80%, transparent);
+}
+
+.landingHeroButton {
+  height: 56px;
+  border-radius: 18px !important;
+  padding-inline: 2.5rem !important;
+  background-image: linear-gradient(135deg, var(--landing-primary), var(--landing-primary-strong));
+  color: #fff !important;
+  font-weight: 600;
+  box-shadow: var(--landing-shadow-lg);
+  transition: transform 0.2s ease;
+}
+
+.landingHeroButton:disabled {
+  opacity: 0.85;
+}
+
+.landingHeroButton:not(:disabled):hover {
+  transform: translateY(-2px);
+}
+
+.landingHeroButtonSpinner {
+  animation: landing-spin 1s linear infinite;
+}
+
+.landingHeroProviders {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1.75rem;
+  font-size: 0.875rem;
+  color: var(--landing-muted);
+}
+
+.landingHeroProvider {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.landingHeroCtaRow {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.landingHeroSignin {
+  border-radius: 16px !important;
+  height: 48px;
+}
+
+.landingHeroFeatureGrid {
+  margin-top: 2.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.landingHeroFeatureCard {
+  padding: 1rem;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--landing-border) 60%, transparent);
+  background: color-mix(in srgb, var(--landing-surface) 90%, transparent);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.landingHeroFeatureCard:hover {
+  transform: translateY(-6px);
+  border-color: color-mix(in srgb, var(--landing-primary) 55%, transparent);
+}
+
+/* Benefits */
+.landingBenefits {
+  background: var(--landing-surface);
+}
+
+.landingSectionHeader {
+  text-align: center;
+  margin-bottom: clamp(2rem, 6vw, 3.5rem);
+}
+
+.landingSectionTitle {
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--landing-text);
+}
+
+.landingSectionSubtitle {
+  max-width: 640px;
+  margin: 0 auto;
+  font-size: clamp(1rem, 2.2vw, 1.25rem);
+}
+
+.landingBenefitsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+}
+
+.landingBenefitCard {
+  background: var(--landing-bg);
+  border: 1px solid var(--landing-border);
+  border-radius: 22px;
+  padding: 1.75rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.landingBenefitCard:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 18px 40px rgba(99, 102, 241, 0.16);
+}
+
+.landingBenefitIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--landing-success) 15%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--landing-success);
+  margin-bottom: 1rem;
+}
+
+/* Features */
+.landingFeatures {
+  background: transparent;
+}
+
+.landingTabsList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 28px;
+  background: var(--landing-surface);
+  border: 1px solid var(--landing-border);
+  margin-bottom: clamp(2.5rem, 6vw, 3.75rem);
+}
+
+.landingTabTrigger {
+  border-radius: 18px;
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--landing-muted);
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.landingTabTrigger[data-state="active"] {
+  background: linear-gradient(135deg, var(--landing-primary), var(--landing-primary-strong));
+  color: #fff;
+  box-shadow: var(--landing-shadow-lg);
+}
+
+.landingTabTrigger:not([data-state="active"]):hover {
+  color: var(--landing-text);
+  transform: translateY(-2px);
+}
+
+.landingSurfaceCard {
+  background: var(--landing-surface);
+  border: 1px solid var(--landing-border);
+  border-radius: 24px;
+  padding: clamp(1.75rem, 4vw, 2.5rem);
+  box-shadow: var(--landing-shadow-card);
+}
+
+.landingInsetCard {
+  background: var(--landing-bg);
+  border: 1px solid color-mix(in srgb, var(--landing-border) 80%, transparent);
+  border-radius: 20px;
+  padding: 1.5rem;
+}
+
+.landingProfilesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.5rem;
+}
+
+.landingProfileCard {
+  position: relative;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--landing-border) 75%, transparent);
+  background: var(--landing-bg);
+  padding: 1.75rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+}
+
+.landingProfileCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 44px rgba(99, 102, 241, 0.18);
+}
+
+.landingProfileStar {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  color: var(--landing-warning);
+}
+
+.landingList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.landingListRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--landing-border) 75%, transparent);
+  background: var(--landing-bg);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.landingListRow:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+}
+
+.landingStatusSuccess {
+  background: color-mix(in srgb, var(--landing-success) 18%, transparent) !important;
+  color: var(--landing-success) !important;
+}
+
+.landingStatusWarning {
+  background: color-mix(in srgb, var(--landing-warning) 18%, transparent) !important;
+  color: var(--landing-warning) !important;
+}
+
+.landingStatusError {
+  background: color-mix(in srgb, var(--landing-error) 18%, transparent) !important;
+  color: var(--landing-error) !important;
+}
+
+.landingSeverityHigh {
+  background: color-mix(in srgb, var(--landing-error) 18%, transparent) !important;
+  color: var(--landing-error) !important;
+  border: 0 !important;
+}
+
+.landingSeverityMedium {
+  background: color-mix(in srgb, var(--landing-warning) 18%, transparent) !important;
+  color: var(--landing-warning) !important;
+  border: 0 !important;
+}
+
+.landingSeverityLow {
+  background: color-mix(in srgb, var(--landing-muted) 15%, transparent) !important;
+  color: var(--landing-muted) !important;
+  border: 0 !important;
+}
+
+.landingTwoColumnGrid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.landingTeamRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--landing-border) 70%, transparent);
+  background: var(--landing-bg);
+}
+
+.landingOnlineDot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--landing-success);
+  border: 2px solid var(--landing-bg);
+}
+
+.landingBadgeMuted {
+  background: color-mix(in srgb, var(--landing-muted) 15%, transparent) !important;
+  color: var(--landing-muted) !important;
+  border: 0 !important;
+}
+
+.landingBadgePrimary {
+  background: color-mix(in srgb, var(--landing-primary) 15%, transparent) !important;
+  color: var(--landing-primary) !important;
+  border: 0 !important;
+}
+
+.landingDivider {
+  border-top: 1px solid var(--landing-border);
+  margin-block: 1.5rem;
+}
+
+.landingSmallMuted {
+  font-size: 0.875rem;
+  color: var(--landing-muted);
+}
+
+.landingStatsGrid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.landingStatCard {
+  padding: 1.5rem;
+  border-radius: 20px;
+  background: var(--landing-surface);
+  border: 1px solid var(--landing-border);
+  box-shadow: var(--landing-shadow-card);
+}
+
+.landingChartsGrid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.landingDependencyGrid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+/* Premium */
+.landingPremium {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at top right, color-mix(in srgb, var(--landing-primary) 12%, transparent), transparent 55%),
+    var(--landing-bg);
+}
+
+.landingPremium::before,
+.landingPremium::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(90px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.landingPremium::before {
+  top: -25%;
+  right: -10%;
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--landing-primary) 20%, transparent), transparent 70%);
+}
+
+.landingPremium::after {
+  bottom: -20%;
+  left: -15%;
+  width: 360px;
+  height: 360px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--landing-primary-strong) 20%, transparent), transparent 70%);
+}
+
+.landingPremiumContent {
+  position: relative;
+  z-index: 1;
+}
+
+.landingPremiumFeatures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: clamp(2.5rem, 6vw, 3.5rem);
+}
+
+.landingPremiumFeatureRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.landingPremiumFeatureIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--landing-primary) 15%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--landing-primary);
+  flex-shrink: 0;
+}
+
+.landingPremiumCard {
+  border-radius: 28px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--landing-surface) 92%, transparent),
+      color-mix(in srgb, var(--landing-surface) 70%, transparent));
+  border: 1px solid color-mix(in srgb, var(--landing-primary) 25%, transparent);
+  box-shadow: var(--landing-shadow-card);
+  padding: clamp(2.5rem, 6vw, 3rem);
+  text-align: center;
+}
+
+.landingPremiumBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--landing-primary), var(--landing-primary-strong));
+  color: #fff;
+  font-weight: 600;
+  box-shadow: var(--landing-shadow-lg);
+}
+
+.landingAiTip {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--landing-primary) 12%, transparent), transparent);
+  border: 1px solid color-mix(in srgb, var(--landing-primary) 25%, transparent);
+}
+
+/* Footer */
+.landingFooter {
+  background: var(--landing-surface);
+  border-top: 1px solid var(--landing-border);
+}
+
+.landingFooterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 2.5rem;
+}
+
+.landingFooterBrand {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.landingFooterLogo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+
+.landingFooterLogoMark {
+  width: 42px;
+  height: 42px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--landing-primary), var(--landing-primary-strong));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: var(--landing-shadow-lg);
+}
+
+.landingFooterSocials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.landingFooterSocialLink {
+  width: 42px;
+  height: 42px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--landing-border);
+  color: var(--landing-text);
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.landingFooterSocialLink:hover {
+  transform: translateY(-3px);
+  background: linear-gradient(135deg, var(--landing-primary), var(--landing-primary-strong));
+  border-color: transparent;
+  color: #fff;
+}
+
+.landingFooterTitle {
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--landing-text);
+}
+
+.landingFooterList {
+  display: grid;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.landingFooterList a {
+  color: var(--landing-muted);
+  transition: color 0.2s ease;
+}
+
+.landingFooterList a:hover {
+  color: var(--landing-primary);
+}
+
+.landingFooterBottom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--landing-border);
+  padding-top: 1.5rem;
+  margin-top: 2.5rem;
+  font-size: 0.875rem;
+  color: var(--landing-muted);
+}
+
+/* Dialog */
+.landingDialogContent {
+  background: var(--landing-surface) !important;
+  border-radius: 28px !important;
+  border: 1px solid var(--landing-border) !important;
+  box-shadow: var(--landing-shadow-card) !important;
+}
+
+.landingTabsListAlt {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 18px;
+  background: var(--landing-bg);
+  border: 1px solid var(--landing-border);
+}
+
+.landingTabsTriggerAlt {
+  border-radius: 14px;
+  padding: 0.6rem 1rem;
+  font-weight: 500;
+  color: var(--landing-muted);
+}
+
+.landingTabsTriggerAlt[data-state="active"] {
+  background: var(--landing-surface);
+  color: var(--landing-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--landing-primary) 35%, transparent);
+}
+
+.landingInputRounded {
+  border-radius: 16px !important;
+  height: 44px !important;
+  border: 1px solid var(--landing-border) !important;
+  background: var(--landing-bg) !important;
+}
+
+.landingInputRounded:focus-visible {
+  border-color: color-mix(in srgb, var(--landing-primary) 70%, transparent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--landing-primary) 18%, transparent);
+}
+
+.landingButtonPrimary {
+  border-radius: 16px !important;
+  background: linear-gradient(135deg, var(--landing-primary), var(--landing-primary-strong));
+  color: #fff !important;
+  height: 44px;
+  font-weight: 600;
+  box-shadow: var(--landing-shadow-lg);
+}
+
+.landingButtonGhost {
+  border-radius: 14px !important;
+}
+
+.landingButtonOutline {
+  border-radius: 16px !important;
+  height: 44px;
+}
+
+.landingMutedDivider {
+  position: relative;
+  text-align: center;
+  margin-block: 1.75rem;
+}
+
+.landingMutedDivider::before {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 1px;
+  background: var(--landing-border);
+}
+
+.landingMutedDivider span {
+  position: relative;
+  padding: 0 0.75rem;
+  background: var(--landing-surface);
+  color: var(--landing-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.landingMutedNote {
+  font-size: 0.75rem;
+  color: var(--landing-muted);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .landingHeaderInner {
+    padding-inline: clamp(1.25rem, 6vw, 3rem);
+  }
+
+  .landingHeroField {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .landingHeroButton {
+    width: 100%;
+  }
+
+  .landingPremiumFeatures {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .landingHeader {
+    height: auto;
+  }
+
+  .landingHeaderInner {
+    padding-block: 1rem;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .landingHeaderActions {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .landingHero {
+    padding-top: clamp(5rem, 16vw, 7rem);
+  }
+
+  .landingHeroSubtitle {
+    margin-bottom: 2rem;
+  }
+
+  .landingSection,
+  .landingSectionNarrow {
+    padding-inline: clamp(1rem, 8vw, 2rem);
+  }
+
+  .landingFooterBottom {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .landingTabsList {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .landingTabsListAlt {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .landingHeroFeatureGrid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .landingBenefitsGrid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .landingFooterGrid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+}
