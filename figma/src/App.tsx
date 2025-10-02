@@ -13,7 +13,7 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router-dom';
-import { Landing } from './components/pages/Landing';
+import { LandingPage } from './landing/pages/LandingPage';
 import { Analyze } from './components/pages/Analyze';
 import { Select } from './components/pages/Select';
 import { Export } from './components/pages/Export';
@@ -348,7 +348,7 @@ export default function App() {
           {showTopbar && <Topbar />}
           <main className={showTopbar ? 'pt-16' : ''}>
             <Routes>
-              <Route path={pageToPath.landing} element={<Landing />} />
+            <Route path={pageToPath.landing} element={<LandingPage />} />
               <Route
                 path={pageToPath.signin}
                 element={
